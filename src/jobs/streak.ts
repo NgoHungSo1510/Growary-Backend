@@ -8,7 +8,7 @@ const getStartOfDay = (date: Date = new Date()): Date => {
     return d;
 };
 
-const STREAK_MIN_TASKS = 1;
+const STREAK_MIN_TASKS = 3;
 
 export function startStreakCronJob() {
     // Run at midnight UTC every day

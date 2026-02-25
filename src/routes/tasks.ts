@@ -24,7 +24,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response): Promise
 // Get system tasks only (for admin)
 router.get('/system', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const tasks = await TaskTemplate.find({ isSystemTask: true }).sort({ category: 1, title: 1 });
+        const tasks = await TaskTemplate.find({ isSystemTask: true, isActive: true }).sort({ category: 1, title: 1 });
         res.json({ tasks });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch system tasks' });

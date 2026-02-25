@@ -16,6 +16,8 @@ import adminRoutes from './routes/admin';
 import uploadRoutes from './routes/upload';
 import levelRoutes from './routes/levels';
 import eventRoutes from './routes/events';
+import gachaRoutes from './routes/gacha';
+import notificationRoutes from './routes/notifications';
 import { startStreakCronJob } from './jobs/streak';
 
 const app = express();
@@ -45,6 +47,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/levels', levelRoutes);
 app.use('/api/events', eventRoutes);
+app.use('/api/gacha', gachaRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 404 Handler
 app.use((req, res) => {

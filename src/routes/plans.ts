@@ -4,10 +4,11 @@ import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { checkAndGrantMilestones } from '../utils/milestones';
+import { PenaltyConfig } from '../models';
 
 const router = Router();
 
-const STREAK_MIN_TASKS = 1;
+const STREAK_MIN_TASKS = 3;
 
 // Helper: Get start of day in user's timezone (simplified - uses UTC)
 const getStartOfDay = (date: Date = new Date()): Date => {
@@ -113,6 +114,19 @@ const getMandatoryTasks = async () => {
     }));
 };
 
+// Get penalty config for frontend calculations
+router.get('/penalty-config', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        let config = await PenaltyConfig.findOne();
+        if (!config) {
+            config = await PenaltyConfig.create({ lateThresholds: [], missedQuestPenaltyCoin: 50 });
+        }
+        res.json({ config });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch penalty config' });
+    }
+});
+
 // Get today's plan
 router.get('/today', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
@@ -131,9 +145,36 @@ router.get('/today', authMiddleware, async (req: AuthRequest, res: Response): Pr
             const prevTasks: any[] = [];
 
             if (yesterdayPlan) {
+                const user = await User.findById(req.userId);
                 const incompleteTasks = yesterdayPlan.tasks.filter(
                     t => !t.isCompleted && t.adminApprovalStatus !== 'rejected'
                 );
+                const completedApprovedTasks = yesterdayPlan.tasks.filter(
+                    t => t.isCompleted && t.adminApprovalStatus === 'approved'
+                );
+
+                if (user) {
+                    if (completedApprovedTasks.length < STREAK_MIN_TASKS) {
+                        user.currentStreak = 0;
+                    }
+                    if (incompleteTasks.length > 0) {
+                        const config = await PenaltyConfig.findOne();
+                        const penaltyCoin = config ? config.missedQuestPenaltyCoin : 50;
+                        for (const t of incompleteTasks) {
+                            user.coins = Math.max(0, user.coins - penaltyCoin);
+                            user.pendingPenalties.push({
+                                questId: (t as any).templateId,
+                                questTitle: t.title,
+                                penaltyAmount: penaltyCoin,
+                                reason: 'missed',
+                                createdAt: new Date()
+                            });
+                        }
+                    }
+                    user.lastStreakCheckDate = today;
+                    await user.save();
+                }
+
                 for (const t of incompleteTasks) {
                     // Check if it was already in yesterday's backlog
                     const existingBacklog = yesterdayPlan.backlogFromPreviousDay.find(
@@ -380,18 +421,59 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
             task.completedAt = new Date();
             if (proofImageUrl) task.proofImageUrl = proofImageUrl;
 
-            let grantedRewards: GrantedRewards = { coins: 0, gachaTickets: 0, items: [], levelUps: [] };
+            let grantedRewards: GrantedRewards & { xp?: number } = { coins: 0, gachaTickets: 0, items: [], levelUps: [], xp: 0 };
+
+            // Calculate Late Penalty
+            let finalCoinReward = task.coinReward ?? task.pointsReward;
+            let finalXpReward = task.pointsReward;
+
+            if (task.scheduledTime) {
+                const [h, m] = task.scheduledTime.split(':').map(Number);
+                const scheduledDate = new Date(plan.date);
+                scheduledDate.setHours(h, m, 0, 0);
+
+                if (task.durationMinutes) {
+                    scheduledDate.setMinutes(scheduledDate.getMinutes() + task.durationMinutes);
+                }
+
+                const diffMinutes = Math.floor((task.completedAt.getTime() - scheduledDate.getTime()) / 60000);
+
+                if (diffMinutes >= 15) {
+                    const config = await PenaltyConfig.findOne();
+                    if (config && config.lateThresholds && config.lateThresholds.length > 0) {
+                        let applicableThreshold: { thresholdMinutes: number; deductionPercentage: number } | null = null;
+
+                        for (const t of config.lateThresholds) {
+                            if (diffMinutes >= t.thresholdMinutes) {
+                                if (!applicableThreshold || t.thresholdMinutes > applicableThreshold.thresholdMinutes) {
+                                    applicableThreshold = t;
+                                }
+                            }
+                        }
+
+                        if (applicableThreshold) {
+                            const percent = applicableThreshold.deductionPercentage;
+                            finalCoinReward = Math.max(0, Math.floor(finalCoinReward * (1 - percent / 100)));
+                            finalXpReward = Math.max(0, Math.floor(finalXpReward * (1 - percent / 100)));
+                        }
+                    }
+                }
+            }
 
             // Update user points immediately (for approved tasks)
             if (task.adminApprovalStatus === 'approved') {
                 const user = await User.findById(req.userId);
                 if (user) {
-                    user.coins += (task.coinReward ?? task.pointsReward);
-                    user.currentPoints += task.pointsReward;
-                    user.totalPointsEarned += task.pointsReward;
+                    user.coins += finalCoinReward;
+                    user.currentPoints += finalXpReward;
+                    user.totalPointsEarned += finalXpReward;
 
-                    const lvlRewards = await processLevelUpAsync(user, task.pointsReward);
-                    grantedRewards.coins += lvlRewards.coins;
+                    const lvlRewards = await processLevelUpAsync(user, finalXpReward);
+
+                    // Add actual task rewards to the granted payload so frontend modal can show exact values
+                    grantedRewards.coins = finalCoinReward + lvlRewards.coins;
+                    grantedRewards.xp = finalXpReward;
+
                     grantedRewards.gachaTickets += lvlRewards.gachaTickets;
                     grantedRewards.items.push(...lvlRewards.items);
                     grantedRewards.levelUps.push(...lvlRewards.levelUps);
@@ -399,7 +481,7 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                     // Streak: check if user crossed the threshold this completion
                     const completedApproved = plan.tasks.filter(
                         t => t.isCompleted && t.adminApprovalStatus === 'approved'
-                    ).length + 1; // +1 for current task being completed
+                    ).length;
 
                     if (completedApproved === STREAK_MIN_TASKS && !plan.isDailyScoreCalculated) {
                         user.currentStreak += 1;
@@ -420,8 +502,8 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                     // --- Boss Event Hit Logic ---
                     const activeBoss = await BossEvent.findOne({ status: 'active' });
                     if (activeBoss) {
-                        const damage = task.pointsReward;
-                        const coinsGained = task.coinReward ?? task.pointsReward;
+                        const damage = finalXpReward;
+                        const coinsGained = finalCoinReward;
 
                         activeBoss.currentHp = Math.max(0, activeBoss.currentHp - damage);
                         if (activeBoss.currentHp === 0) {
@@ -463,7 +545,7 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                                 completedAt: new Date(),
                             },
                         },
-                        $inc: { totalTasksCompleted: 1, totalPointsEarned: task.pointsReward },
+                        $inc: { totalTasksCompleted: 1, totalPointsEarned: finalXpReward },
                     },
                     { upsert: true }
                 );

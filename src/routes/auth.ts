@@ -126,11 +126,10 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response): Promi
 // Update profile
 router.put('/me', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { username, displayName, email, currentPassword, newPassword, settings, avatar } = req.body;
+        const { username, email, currentPassword, newPassword, settings, avatar } = req.body;
         const updates: any = {};
 
         if (username) updates.username = username;
-        if (displayName !== undefined) updates.displayName = displayName;
         if (settings) updates.settings = { ...req.user?.settings, ...settings };
         if (avatar) updates.avatar = avatar;
 
@@ -142,6 +141,16 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res: Response): Promi
                 return;
             }
             updates.email = email;
+        }
+
+        // Username change — check uniqueness
+        if (username && username !== req.user?.username) {
+            const exists = await User.findOne({ username, _id: { $ne: req.userId } });
+            if (exists) {
+                res.status(400).json({ error: 'Tên tài khoản này đã được sử dụng' });
+                return;
+            }
+            updates.username = username;
         }
 
         // Password change — verify current first
@@ -169,6 +178,24 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res: Response): Promi
         res.json({ user });
     } catch (error) {
         res.status(500).json({ error: 'Failed to update profile' });
+    }
+});
+
+// Clear pending penalties
+router.delete('/me/penalties', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) {
+            res.status(404).json({ error: 'User not found' });
+            return;
+        }
+
+        user.pendingPenalties = [];
+        await user.save();
+
+        res.json({ message: 'Penalties cleared', user });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to clear penalties' });
     }
 });
 
