@@ -3,7 +3,7 @@ import { User, TaskTemplate, DailyPlan, Reward, Voucher, Event, Level, Milestone
 import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
 import { authMiddleware, adminMiddleware, AuthRequest } from '../middleware/auth';
-import { processLevelUpAsync } from './plans';
+import { processLevelUp } from './plans';
 
 const router = Router();
 
@@ -140,7 +140,7 @@ router.patch('/users/:id/points', async (req: AuthRequest, res: Response): Promi
         // Update new economy fields
         user.coins += amount;
         if (amount > 0) {
-            await processLevelUpAsync(user, amount);
+            await processLevelUp(user, amount);
         } else {
             // Deductions or zero
             user.xp += amount;
@@ -245,7 +245,7 @@ router.patch('/tasks/:planId/:taskId/approve', async (req: AuthRequest, res: Res
                 user.totalPointsEarned += task.pointsReward;
                 user.currentPoints += task.pointsReward;
 
-                await processLevelUpAsync(user, task.pointsReward);
+                await processLevelUp(user, task.pointsReward);
             }
         }
 
