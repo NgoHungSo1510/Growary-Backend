@@ -10,3 +10,8 @@ export { default as Level, ILevel } from './Level';
 export { BossEvent, IBossEvent } from './BossEvent';
 export { BossRecord, IBossRecord } from './BossRecord';
 export { MilestoneReward, IMilestoneReward } from './MilestoneReward';
+export { GachaItem, IGachaItem } from './GachaItem';
+export { GachaHistory, IGachaHistory } from './GachaHistory';
+export { PenaltyConfig, IPenaltyConfig } from './PenaltyConfig';
+export { NotificationConfig, INotificationConfig } from './NotificationConfig';
+export { Notification, INotification } from './Notification';

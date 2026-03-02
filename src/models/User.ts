@@ -3,7 +3,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IUser extends Document {
     _id: mongoose.Types.ObjectId;
     username: string;
-    displayName?: string;
     email: string;
     password: string;
     avatar?: string;
@@ -13,6 +12,7 @@ export interface IUser extends Document {
     totalCoinsSpent: number;
     xp: number;
     level: number;
+    gachaTier: number;
     currentPoints: number;
     totalPointsEarned: number;
     currentStreak: number;
@@ -22,6 +22,14 @@ export interface IUser extends Document {
         pushNotifications: boolean;
         timezone: string;
     };
+    lastStreakCheckDate?: Date;
+    pendingPenalties: {
+        questId?: mongoose.Types.ObjectId;
+        questTitle?: string;
+        penaltyAmount: number;
+        reason: 'missed' | 'late';
+        createdAt: Date;
+    }[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -34,10 +42,6 @@ const UserSchema = new Schema<IUser>(
             unique: true,
             trim: true,
             minlength: [3, 'Username must be at least 3 characters'],
-        },
-        displayName: {
-            type: String,
-            trim: true,
         },
         email: {
             type: String,
@@ -80,6 +84,10 @@ const UserSchema = new Schema<IUser>(
             type: Number,
             default: 1,
         },
+        gachaTier: {
+            type: Number,
+            default: 1,
+        },
         currentPoints: {
             type: Number,
             default: 0,
@@ -106,6 +114,18 @@ const UserSchema = new Schema<IUser>(
             pushNotifications: { type: Boolean, default: true },
             timezone: { type: String, default: 'Asia/Ho_Chi_Minh' },
         },
+        lastStreakCheckDate: {
+            type: Date,
+        },
+        pendingPenalties: [
+            {
+                questId: { type: Schema.Types.ObjectId, ref: 'Quest' },
+                questTitle: { type: String },
+                penaltyAmount: { type: Number, required: true },
+                reason: { type: String, enum: ['missed', 'late'], required: true },
+                createdAt: { type: Date, default: Date.now },
+            }
+        ]
     },
     { timestamps: true }
 );

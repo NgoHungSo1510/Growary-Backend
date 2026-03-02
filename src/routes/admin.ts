@@ -1,9 +1,10 @@
 import { Router, Response } from 'express';
-import { User, TaskTemplate, DailyPlan, Reward, Voucher, Event, Level, MilestoneReward } from '../models';
+import { User, TaskTemplate, DailyPlan, Reward, Voucher, Event, Level, MilestoneReward, GachaItem, PenaltyConfig, NotificationConfig } from '../models';
 import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
 import { authMiddleware, adminMiddleware, AuthRequest } from '../middleware/auth';
-import { processLevelUpAsync } from './plans';
+import { processLevelUp } from './plans';
+import { escapeRegex } from '../constants';
 
 const router = Router();
 
@@ -17,11 +18,12 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        const [totalUsers, newUsersToday, pendingVouchers, activeUsers] = await Promise.all([
+        const [totalUsers, newUsersToday, pendingVouchers, activeUsers, activeUsersToday] = await Promise.all([
             User.countDocuments(),
             User.countDocuments({ createdAt: { $gte: today } }),
             Voucher.countDocuments({ status: 'pending_use' }),
             User.countDocuments({ updatedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }),
+            User.countDocuments({ updatedAt: { $gte: today } }),
         ]);
 
         // Pending custom tasks across all plans
@@ -75,8 +77,12 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
             xpGranted.push(found?.xpGranted || 0);
         }
 
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayAct = dailyActivity.find(a => a._id === todayStr);
+        const tasksCompletedToday = todayAct?.tasksCompleted || 0;
+
         res.json({
-            stats: { totalUsers, newUsersToday, pendingVouchers, pendingTasks, activeUsers, totalXPGranted },
+            stats: { totalUsers, newUsersToday, pendingVouchers, pendingTasks, activeUsers, totalXPGranted, activeUsersToday, tasksCompletedToday },
             activity: { labels, tasksCompleted, xpGranted },
         });
     } catch (error) {
@@ -93,9 +99,10 @@ router.get('/users', async (req: AuthRequest, res: Response): Promise<void> => {
         const query: any = { role: 'user' };
 
         if (search) {
+            const safeSearch = escapeRegex(String(search));
             query.$or = [
-                { username: { $regex: search, $options: 'i' } },
-                { email: { $regex: search, $options: 'i' } },
+                { username: { $regex: safeSearch, $options: 'i' } },
+                { email: { $regex: safeSearch, $options: 'i' } },
             ];
         }
 
@@ -132,21 +139,16 @@ router.patch('/users/:id/points', async (req: AuthRequest, res: Response): Promi
         const user = await User.findById(req.params.id);
         if (!user) { res.status(404).json({ error: 'User not found' }); return; }
 
-        // Update new economy fields
         user.coins += amount;
         if (amount > 0) {
-            await processLevelUpAsync(user, amount);
+            await processLevelUp(user, amount);
         } else {
-            // Deductions or zero
             user.xp += amount;
             if (user.xp < 0) user.xp = 0;
-            // Note: If admin deducts XP meaning they drop a level, we leave level alone for now.
-            // Down-leveling would require reverse Delta XP math which isn't standard in RPGs anyway.
         }
 
         if (user.coins < 0) user.coins = 0;
 
-        // Keep legacy fields in sync
         user.currentPoints += amount;
         if (amount > 0) user.totalPointsEarned += amount;
         if (user.currentPoints < 0) user.currentPoints = 0;
@@ -232,7 +234,6 @@ router.patch('/tasks/:planId/:taskId/approve', async (req: AuthRequest, res: Res
             console.error('Failed to auto-create TaskTemplate for approved task:', templateError);
         }
 
-        // Award points and coins to the user ONLY if they already completed it
         if (task.isCompleted) {
             const user = await User.findById(plan.user);
             if (user) {
@@ -240,7 +241,8 @@ router.patch('/tasks/:planId/:taskId/approve', async (req: AuthRequest, res: Res
                 user.totalPointsEarned += task.pointsReward;
                 user.currentPoints += task.pointsReward;
 
-                await processLevelUpAsync(user, task.pointsReward);
+                await processLevelUp(user, task.pointsReward);
+                await user.save();
             }
         }
 
@@ -328,7 +330,17 @@ router.post('/events', async (req: AuthRequest, res: Response): Promise<void> =>
 
 router.put('/events/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const event = await Event.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const { title, description, bannerUrl, startDate, endDate, isActive, specialTasks } = req.body;
+        const updates: Record<string, any> = {};
+        if (title !== undefined) updates.title = title;
+        if (description !== undefined) updates.description = description;
+        if (bannerUrl !== undefined) updates.bannerUrl = bannerUrl;
+        if (startDate !== undefined) updates.startDate = startDate;
+        if (endDate !== undefined) updates.endDate = endDate;
+        if (isActive !== undefined) updates.isActive = isActive;
+        if (specialTasks !== undefined) updates.specialTasks = specialTasks;
+
+        const event = await Event.findByIdAndUpdate(req.params.id, updates, { new: true });
         if (!event) { res.status(404).json({ error: 'Event not found' }); return; }
         res.json({ event });
     } catch (error) {
@@ -413,8 +425,20 @@ router.get('/boss', async (_req: AuthRequest, res: Response): Promise<void> => {
 
 router.post('/boss', async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const event = new BossEvent(req.body);
-        await event.save();
+        const { title, description, startTime, endTime, maxHp, baseRewardCoins, baseRewardXp, gachaTickets, rewardItems, colorBg, colorIcon, iconName } = req.body;
+        if (!title || !startTime || !endTime || !maxHp) {
+            res.status(400).json({ error: 'title, startTime, endTime, and maxHp are required' });
+            return;
+        }
+        const event = await BossEvent.create({
+            title, description, startTime, endTime,
+            maxHp, currentHp: maxHp,
+            baseRewardCoins: baseRewardCoins || 0,
+            baseRewardXp: baseRewardXp || 0,
+            gachaTickets: gachaTickets || 0,
+            rewardItems: rewardItems || [],
+            colorBg, colorIcon, iconName,
+        });
         res.status(201).json({ event });
     } catch (error) {
         res.status(500).json({ error: 'Failed to create boss event' });
@@ -423,7 +447,24 @@ router.post('/boss', async (req: AuthRequest, res: Response): Promise<void> => {
 
 router.put('/boss/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const event = await BossEvent.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const { title, description, startTime, endTime, maxHp, currentHp, baseRewardCoins, baseRewardXp, gachaTickets, rewardItems, status, colorBg, colorIcon, iconName } = req.body;
+        const updates: Record<string, any> = {};
+        if (title !== undefined) updates.title = title;
+        if (description !== undefined) updates.description = description;
+        if (startTime !== undefined) updates.startTime = startTime;
+        if (endTime !== undefined) updates.endTime = endTime;
+        if (maxHp !== undefined) updates.maxHp = maxHp;
+        if (currentHp !== undefined) updates.currentHp = currentHp;
+        if (baseRewardCoins !== undefined) updates.baseRewardCoins = baseRewardCoins;
+        if (baseRewardXp !== undefined) updates.baseRewardXp = baseRewardXp;
+        if (gachaTickets !== undefined) updates.gachaTickets = gachaTickets;
+        if (rewardItems !== undefined) updates.rewardItems = rewardItems;
+        if (status !== undefined) updates.status = status;
+        if (colorBg !== undefined) updates.colorBg = colorBg;
+        if (colorIcon !== undefined) updates.colorIcon = colorIcon;
+        if (iconName !== undefined) updates.iconName = iconName;
+
+        const event = await BossEvent.findByIdAndUpdate(req.params.id, updates, { new: true });
         if (!event) {
             res.status(404).json({ error: 'Event not found' });
             return;
@@ -487,6 +528,120 @@ router.delete('/milestones/:id', async (req: AuthRequest, res: Response): Promis
         res.json({ message: 'Milestone deleted' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete milestone reward' });
+    }
+});
+
+// ==================== GACHA CONFIG ====================
+
+router.get('/gacha', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const items = await GachaItem.find()
+            .populate('rewardId')
+            .sort({ tier: 1, probability: -1 });
+        res.json({ items });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch gacha items' });
+    }
+});
+
+router.post('/gacha', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const item = new GachaItem({
+            ...req.body,
+            createdBy: req.userId,
+        });
+        await item.save();
+        res.status(201).json({ item });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create gacha item' });
+    }
+});
+
+router.put('/gacha/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const item = await GachaItem.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!item) { res.status(404).json({ error: 'Gacha item not found' }); return; }
+        res.json({ item });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update gacha item' });
+    }
+});
+
+router.delete('/gacha/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await GachaItem.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Gacha item deleted' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete gacha item' });
+    }
+});
+// ==================== PENALTY CONFIG ====================
+
+router.get('/penalty-config', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        let config = await PenaltyConfig.findOne();
+        if (!config) {
+            config = await PenaltyConfig.create({ lateThresholds: [], missedQuestPenaltyCoin: 50 });
+        }
+        res.json({ config });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch penalty config' });
+    }
+});
+
+router.put('/penalty-config', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        let config = await PenaltyConfig.findOne();
+        if (!config) {
+            config = new PenaltyConfig(req.body);
+            await config.save();
+        } else {
+            config.lateThresholds = req.body.lateThresholds || config.lateThresholds;
+            config.missedQuestPenaltyCoin = req.body.missedQuestPenaltyCoin ?? config.missedQuestPenaltyCoin;
+            await config.save();
+        }
+        res.json({ config });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update penalty config' });
+    }
+});
+
+// ==================== NOTIFICATION CONFIG ====================
+
+router.get('/notifications', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const configs = await NotificationConfig.find().sort({ createdAt: -1 });
+        res.json({ configs });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch notification configs' });
+    }
+});
+
+router.post('/notifications', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const config = await NotificationConfig.create(req.body);
+        res.status(201).json({ config });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create notification config' });
+    }
+});
+
+router.put('/notifications/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const config = await NotificationConfig.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!config) { res.status(404).json({ error: 'Not found' }); return; }
+        res.json({ config });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update notification config' });
+    }
+});
+
+router.delete('/notifications/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await NotificationConfig.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Deleted' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete notification config' });
     }
 });
 

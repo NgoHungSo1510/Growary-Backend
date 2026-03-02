@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { User, IUser } from '../models';
+import { getJwtSecret } from '../constants';
 
 export interface AuthRequest extends Request {
     user?: IUser;
@@ -21,9 +22,8 @@ export const authMiddleware = async (
         }
 
         const token = authHeader.split(' ')[1];
-        const secret = process.env.JWT_SECRET || 'fallback_secret';
 
-        const decoded = jwt.verify(token, secret) as { userId: string };
+        const decoded = jwt.verify(token, getJwtSecret()) as { userId: string };
         const user = await User.findById(decoded.userId).select('-password');
 
         if (!user) {

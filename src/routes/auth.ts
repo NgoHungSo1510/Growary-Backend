@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User } from '../models';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { getJwtSecret } from '../constants';
 
 const router = Router();
 
@@ -41,7 +42,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
         // Generate token
         const token = jwt.sign(
             { userId: user._id.toString() },
-            process.env.JWT_SECRET || 'fallback_secret',
+            getJwtSecret(),
             { expiresIn: '7d' }
         );
 
@@ -89,7 +90,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         // Generate token
         const token = jwt.sign(
             { userId: user._id.toString() },
-            process.env.JWT_SECRET || 'fallback_secret',
+            getJwtSecret(),
             { expiresIn: '7d' }
         );
 
@@ -126,11 +127,10 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response): Promi
 // Update profile
 router.put('/me', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { username, displayName, email, currentPassword, newPassword, settings, avatar } = req.body;
+        const { username, email, currentPassword, newPassword, settings, avatar } = req.body;
         const updates: any = {};
 
         if (username) updates.username = username;
-        if (displayName !== undefined) updates.displayName = displayName;
         if (settings) updates.settings = { ...req.user?.settings, ...settings };
         if (avatar) updates.avatar = avatar;
 
@@ -138,16 +138,26 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res: Response): Promi
         if (email && email !== req.user?.email) {
             const exists = await User.findOne({ email, _id: { $ne: req.userId } });
             if (exists) {
-                res.status(400).json({ error: 'Email này đã được sử dụng' });
+                res.status(400).json({ error: 'Email is already in use' });
                 return;
             }
             updates.email = email;
         }
 
+        // Username change — check uniqueness
+        if (username && username !== req.user?.username) {
+            const exists = await User.findOne({ username, _id: { $ne: req.userId } });
+            if (exists) {
+                res.status(400).json({ error: 'Username is already in use' });
+                return;
+            }
+            updates.username = username;
+        }
+
         // Password change — verify current first
         if (newPassword) {
             if (!currentPassword) {
-                res.status(400).json({ error: 'Cần nhập mật khẩu hiện tại' });
+                res.status(400).json({ error: 'Current password is required' });
                 return;
             }
             const userDoc = await User.findById(req.userId);
@@ -157,7 +167,7 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res: Response): Promi
             }
             const isMatch = await bcrypt.compare(currentPassword, userDoc.password);
             if (!isMatch) {
-                res.status(400).json({ error: 'Mật khẩu hiện tại không đúng' });
+                res.status(400).json({ error: 'Current password is incorrect' });
                 return;
             }
             const salt = await bcrypt.genSalt(10);
@@ -169,6 +179,24 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res: Response): Promi
         res.json({ user });
     } catch (error) {
         res.status(500).json({ error: 'Failed to update profile' });
+    }
+});
+
+// Clear pending penalties
+router.delete('/me/penalties', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) {
+            res.status(404).json({ error: 'User not found' });
+            return;
+        }
+
+        user.pendingPenalties = [];
+        await user.save();
+
+        res.json({ message: 'Penalties cleared', user });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to clear penalties' });
     }
 });
 
