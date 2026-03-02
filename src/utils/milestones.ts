@@ -2,19 +2,18 @@ import { User, MilestoneReward, Voucher } from '../models';
 import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
 import { GrantedRewards } from '../routes/plans';
+import { VOUCHER_EXPIRY_DAYS } from '../constants';
 
 export async function checkAndGrantMilestones(userId: string | mongoose.Types.ObjectId): Promise<GrantedRewards> {
     const rewards: GrantedRewards = { coins: 0, gachaTickets: 0, items: [], levelUps: [] };
     const user = await User.findById(userId);
     if (!user) return rewards;
 
-    // Find all milestones
     const milestones = await MilestoneReward.find().populate('rewardItems');
 
     let isModified = false;
 
     for (const m of milestones) {
-        // Skip if already claimed
         if (user.claimedMilestones.includes(m._id)) continue;
 
         let isMet = false;
@@ -25,7 +24,6 @@ export async function checkAndGrantMilestones(userId: string | mongoose.Types.Ob
         }
 
         if (isMet) {
-            // Grant rewards
             if (m.coins > 0) {
                 user.coins += m.coins;
                 rewards.coins += m.coins;
@@ -35,17 +33,16 @@ export async function checkAndGrantMilestones(userId: string | mongoose.Types.Ob
                 rewards.gachaTickets += m.gachaTickets;
             }
 
-            // Grant product tickets (vouchers)
             if (m.rewardItems && m.rewardItems.length > 0) {
                 const expiresAt = new Date();
-                expiresAt.setDate(expiresAt.getDate() + 30); // 30 days expiry
+                expiresAt.setDate(expiresAt.getDate() + VOUCHER_EXPIRY_DAYS);
 
                 for (const rw of m.rewardItems as any) {
                     await Voucher.create({
                         user: user._id,
                         reward: rw._id,
                         code: `GIFT-${uuidv4().slice(0, 8).toUpperCase()}`,
-                        pointCostSnapshot: 0, // Gifted, costs 0
+                        pointCostSnapshot: 0,
                         rewardTitleSnapshot: rw.title,
                         expiresAt,
                     });
@@ -60,7 +57,6 @@ export async function checkAndGrantMilestones(userId: string | mongoose.Types.Ob
                 }
             }
 
-            // Mark as claimed
             user.claimedMilestones.push(m._id as any);
             isModified = true;
         }
@@ -71,3 +67,4 @@ export async function checkAndGrantMilestones(userId: string | mongoose.Types.Ob
     }
     return rewards;
 }
+

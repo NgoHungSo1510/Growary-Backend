@@ -67,6 +67,9 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // Start server
 const startServer = async () => {
     try {
+        if (!process.env.JWT_SECRET) {
+            throw new Error('FATAL: JWT_SECRET environment variable is not set. Server cannot start.');
+        }
         await connectDB();
         startStreakCronJob();
         app.listen(PORT, () => {

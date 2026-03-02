@@ -1,19 +1,16 @@
-import express from 'express';
+import { Router, Response } from 'express';
 import { GachaItem, GachaHistory, User, Voucher } from '../models';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
-import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import { VOUCHER_EXPIRY_DAYS } from '../constants';
 
-// Simple Pseudo-Random Number Generator based on seed
 function seededRandom(seed: number) {
     const x = Math.sin(seed) * 10000;
     return x - Math.floor(x);
 }
 
-// Deterministic daily shuffle using Fisher-Yates
 function shuffleDaily<T>(array: T[]): T[] {
     const today = new Date();
-    // Unique seed for current day: YYYYMMDD
     let seed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
 
     const shuffled = [...array];
@@ -28,20 +25,18 @@ function shuffleDaily<T>(array: T[]): T[] {
     return shuffled;
 }
 
-const router = express.Router();
+const router = Router();
 
-// Get items available for the user's current tier
-router.get('/items', authMiddleware, async (req: AuthRequest, res: any) => {
+router.get('/items', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const user = await User.findById(req.userId);
-        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (!user) { res.status(404).json({ error: 'User not found' }); return; }
 
         let items = await GachaItem.find({
             isActive: true,
             tier: user.gachaTier,
-        }).lean(); // use lean for faster spread copy in shuffle
+        }).lean();
 
-        // Scramble the visual order uniquely each day, probabilities remain untouched
         items = shuffleDaily(items);
 
         res.json({ items, currentTier: user.gachaTier });
@@ -50,26 +45,25 @@ router.get('/items', authMiddleware, async (req: AuthRequest, res: any) => {
     }
 });
 
-// Get user's spin history
-router.get('/history', authMiddleware, async (req: AuthRequest, res: any) => {
+router.get('/history', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const history = await GachaHistory.find({ userId: req.userId })
             .sort({ createdAt: -1 })
-            .limit(50); // Just return the last 50 for performance
+            .limit(50);
         res.json({ history });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch gacha history' });
     }
 });
 
-// Spin the wheel
-router.post('/spin', authMiddleware, async (req: AuthRequest, res: any) => {
+router.post('/spin', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const user = await User.findById(req.userId);
-        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (!user) { res.status(404).json({ error: 'User not found' }); return; }
 
         if (user.gachaTickets < 1) {
-            return res.status(400).json({ error: 'Not enough gacha tickets' });
+            res.status(400).json({ error: 'Not enough gacha tickets' });
+            return;
         }
 
         const availableItems = await GachaItem.find({
@@ -78,14 +72,14 @@ router.post('/spin', authMiddleware, async (req: AuthRequest, res: any) => {
         }).populate('rewardId');
 
         if (availableItems.length === 0) {
-            return res.status(400).json({ error: 'No items available in the gacha pool' });
+            res.status(400).json({ error: 'No items available in the gacha pool' });
+            return;
         }
 
-        // Calculate weighted probability
         const totalWeight = availableItems.reduce((sum, item) => sum + item.probability, 0);
 
         let randomNum = Math.random() * totalWeight;
-        let selectedItem = availableItems[0]; // fallback
+        let selectedItem = availableItems[0];
 
         for (const item of availableItems) {
             randomNum -= item.probability;
@@ -95,10 +89,8 @@ router.post('/spin', authMiddleware, async (req: AuthRequest, res: any) => {
             }
         }
 
-        // Deduct ticket
         user.gachaTickets -= 1;
 
-        // Apply reward
         let grantedItemDetails = null;
 
         if (selectedItem.type === 'coins' && selectedItem.value) {
@@ -106,25 +98,24 @@ router.post('/spin', authMiddleware, async (req: AuthRequest, res: any) => {
         } else if (selectedItem.type === 'xp' && selectedItem.value) {
             user.xp += selectedItem.value;
         } else if (selectedItem.type === 'tickets' && selectedItem.value) {
-            // Technically this gives tickets back
             user.gachaTickets += selectedItem.value;
         } else if (selectedItem.type === 'item' && selectedItem.rewardId) {
-            // Give user a voucher for the item
             const reward = selectedItem.rewardId as any;
-            const code = `GACHA-${uuidv4().substring(0, 8).toUpperCase()}`;
-            const voucher = new Voucher({
-                code,
-                reward: reward._id,
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + VOUCHER_EXPIRY_DAYS);
+
+            await Voucher.create({
                 user: user._id,
-                status: 'unused',
-                isRead: false,
-                source: 'Sự kiện Gacha',
+                reward: reward._id,
+                code: `GACHA-${uuidv4().substring(0, 8).toUpperCase()}`,
+                pointCostSnapshot: 0,
+                rewardTitleSnapshot: reward.title || selectedItem.name,
+                status: 'active',
+                expiresAt,
             });
-            await voucher.save();
-            grantedItemDetails = reward; // Attach reward details to response
+            grantedItemDetails = reward;
         }
 
-        // Check for Legend Tier Upgrade
         let tierUpgraded = false;
         if (selectedItem.rarity === 'legend' && selectedItem.tier === user.gachaTier) {
             user.gachaTier += 1;
@@ -133,8 +124,7 @@ router.post('/spin', authMiddleware, async (req: AuthRequest, res: any) => {
 
         await user.save();
 
-        // Log history
-        const historyRecord = new GachaHistory({
+        await GachaHistory.create({
             userId: user._id,
             gachaItemId: selectedItem._id,
             itemDetails: {
@@ -145,12 +135,11 @@ router.post('/spin', authMiddleware, async (req: AuthRequest, res: any) => {
                 tier: selectedItem.tier,
             },
         });
-        await historyRecord.save();
 
         res.json({
             success: true,
             wonItem: selectedItem,
-            grantedItemDetails, // if type was item and voucher was created
+            grantedItemDetails,
             tierUpgraded,
             newStats: {
                 coins: user.coins,
@@ -159,7 +148,6 @@ router.post('/spin', authMiddleware, async (req: AuthRequest, res: any) => {
                 gachaTier: user.gachaTier,
             },
         });
-
     } catch (error) {
         console.error('Gacha spin error:', error);
         res.status(500).json({ error: 'Failed to spin the gacha wheel' });
