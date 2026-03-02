@@ -4,7 +4,8 @@ import { BossEvent } from '../models/BossEvent';
 import { STREAK_MIN_TASKS, BOSS_HEAL_AMOUNT, getStartOfDay } from '../constants';
 
 export function startStreakCronJob() {
-    cron.schedule('0 0 * * *', async () => {
+    // 17:00 UTC = 00:00 Vietnam time (UTC+7)
+    cron.schedule('0 17 * * *', async () => {
         console.log('⏰ Running daily streak check...');
         try {
             const yesterday = getStartOfDay();
@@ -40,6 +41,6 @@ export function startStreakCronJob() {
         }
     });
 
-    console.log('📅 Streak cron job scheduled (daily at 00:00 UTC)');
+    console.log('📅 Streak cron job scheduled (daily at 00:00 VN / 17:00 UTC)');
 }
 
