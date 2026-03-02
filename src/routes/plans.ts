@@ -1,25 +1,14 @@
 import { Router, Response } from 'express';
-import { DailyPlan, TaskTemplate, User, Journal, Level } from '../models';
+import { DailyPlan, TaskTemplate, User, Journal, Level, Voucher, PenaltyConfig } from '../models';
 import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { checkAndGrantMilestones } from '../utils/milestones';
-import { PenaltyConfig } from '../models';
+import { v4 as uuidv4 } from 'uuid';
+import { STREAK_MIN_TASKS, VOUCHER_EXPIRY_DAYS, getStartOfDay } from '../constants';
+import { ILevel } from '../models/Level';
 
 const router = Router();
-
-const STREAK_MIN_TASKS = 3;
-
-// Helper: Get start of day in user's timezone (simplified - uses UTC)
-const getStartOfDay = (date: Date = new Date()): Date => {
-    const d = new Date(date);
-    d.setUTCHours(0, 0, 0, 0);
-    return d;
-};
-
-import { Document } from 'mongoose';
-import { Voucher } from '../models';
-import { v4 as uuidv4 } from 'uuid';
 
 export interface GrantedRewards {
     coins: number;
@@ -28,28 +17,27 @@ export interface GrantedRewards {
     levelUps: number[];
 }
 
-// Process XP addition and Delta Level up logic
-export const processLevelUpAsync = async (user: any, addedXp: number): Promise<GrantedRewards> => {
+/**
+ * Process XP addition and level-up logic.
+ * IMPORTANT: Does NOT save user — caller must save after this returns.
+ */
+export const processLevelUp = async (user: any, addedXp: number): Promise<GrantedRewards> => {
     const rewards: GrantedRewards = { coins: 0, gachaTickets: 0, items: [], levelUps: [] };
     user.xp += addedXp;
 
-    // Safety break limit to avoid infinite loops if configuration is broken
+    // Query levels ONCE, reuse throughout the loop
+    const levels: ILevel[] = await Level.find().sort({ level: 1 }).populate('rewardItems');
+
     let loops = 0;
     while (loops < 100) {
-        const levels = await Level.find().sort({ level: 1 }).populate('rewardItems');
-        // Find current level thresholds
         const currentLvlConfig = levels.find(l => l.level === user.level);
 
-        // If no config found for current level (e.g., max level reached), just keep accumulating XP
-        if (!currentLvlConfig || currentLvlConfig.xpRequired === 0) {
-            break;
-        }
+        if (!currentLvlConfig || currentLvlConfig.xpRequired === 0) break;
 
         if (user.xp >= currentLvlConfig.xpRequired) {
             user.xp -= currentLvlConfig.xpRequired;
             user.level += 1;
 
-            // Grant level-up rewards based on the configuration of the NEW level they just reached
             const newLvlConfig = levels.find(l => l.level === user.level);
             if (newLvlConfig) {
                 rewards.levelUps.push(user.level);
@@ -62,10 +50,9 @@ export const processLevelUpAsync = async (user: any, addedXp: number): Promise<G
                     rewards.gachaTickets += newLvlConfig.gachaTickets;
                 }
 
-                // Grant product tickets
                 if (newLvlConfig.rewardItems && newLvlConfig.rewardItems.length > 0) {
                     const expiresAt = new Date();
-                    expiresAt.setDate(expiresAt.getDate() + 30); // 30 days expiry
+                    expiresAt.setDate(expiresAt.getDate() + VOUCHER_EXPIRY_DAYS);
 
                     for (const rw of newLvlConfig.rewardItems as any) {
                         await Voucher.create({
@@ -88,12 +75,12 @@ export const processLevelUpAsync = async (user: any, addedXp: number): Promise<G
                 }
             }
         } else {
-            break; // Not enough XP to level up further
+            break;
         }
         loops++;
     }
 
-    await user.save();
+    // Caller is responsible for saving user
     return rewards;
 };
 
@@ -113,6 +100,24 @@ const getMandatoryTasks = async () => {
         isCompleted: false,
     }));
 };
+
+// Helper: build task entries from previous plan's tasks (for auto-carry)
+const buildCarryoverTasks = (tasks: any[]) =>
+    tasks
+        .filter((t: any) => !t.isMandatory && t.adminApprovalStatus !== 'rejected')
+        .map((t: any) => ({
+            templateId: t.templateId,
+            title: t.title,
+            pointsReward: t.pointsReward,
+            coinReward: t.coinReward ?? 5,
+            isCustomTask: t.isCustomTask,
+            isMandatory: false,
+            adminApprovalStatus: t.adminApprovalStatus === 'pending' ? 'pending' : 'approved',
+            category: t.category,
+            durationMinutes: t.durationMinutes,
+            scheduledTime: t.scheduledTime,
+            isCompleted: false,
+        }));
 
 // Get penalty config for frontend calculations
 router.get('/penalty-config', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
@@ -137,12 +142,11 @@ router.get('/today', authMiddleware, async (req: AuthRequest, res: Response): Pr
         if (!plan) {
             const mandatoryTasks = await getMandatoryTasks();
 
-            // Carryover: check yesterday's incomplete tasks
             const yesterday = getStartOfDay();
             yesterday.setDate(yesterday.getDate() - 1);
             const yesterdayPlan = await DailyPlan.findOne({ user: req.userId, date: yesterday });
             const backlog: { taskTitle: string; originalDate: Date; skipCount: number; pointsReward: number }[] = [];
-            const prevTasks: any[] = [];
+            let prevTasks: any[] = [];
 
             if (yesterdayPlan) {
                 const user = await User.findById(req.userId);
@@ -176,7 +180,6 @@ router.get('/today', authMiddleware, async (req: AuthRequest, res: Response): Pr
                 }
 
                 for (const t of incompleteTasks) {
-                    // Check if it was already in yesterday's backlog
                     const existingBacklog = yesterdayPlan.backlogFromPreviousDay.find(
                         b => b.taskTitle === t.title
                     );
@@ -188,24 +191,7 @@ router.get('/today', authMiddleware, async (req: AuthRequest, res: Response): Pr
                     });
                 }
 
-                // Auto-generate today's tasks based on yesterday's tasks
-                yesterdayPlan.tasks.forEach(t => {
-                    if (!t.isMandatory && t.adminApprovalStatus !== 'rejected') {
-                        prevTasks.push({
-                            templateId: t.templateId,
-                            title: t.title,
-                            pointsReward: t.pointsReward,
-                            coinReward: (t as any).coinReward ?? 5,
-                            isCustomTask: t.isCustomTask,
-                            isMandatory: false,
-                            adminApprovalStatus: t.adminApprovalStatus === 'pending' ? 'pending' : 'approved',
-                            category: t.category,
-                            durationMinutes: t.durationMinutes,
-                            scheduledTime: t.scheduledTime,
-                            isCompleted: false,
-                        });
-                    }
-                });
+                prevTasks = buildCarryoverTasks(yesterdayPlan.tasks as any[]);
             }
 
             plan = await DailyPlan.create({
@@ -235,26 +221,34 @@ router.get('/history', authMiddleware, async (req: AuthRequest, res: Response): 
             date: { $gte: since },
         }).sort({ date: -1 });
 
-        // Flatten completed tasks with date info
-        const entries: any[] = [];
-        plans.forEach(plan => {
-            plan.tasks.forEach(task => {
+        const entries: {
+            _id: any;
+            title: string;
+            category?: string;
+            pointsReward: number;
+            coinReward: number;
+            completedAt: Date;
+            proofImageUrl?: string;
+            date: Date;
+        }[] = [];
+
+        for (const plan of plans) {
+            for (const task of plan.tasks) {
                 if (task.isCompleted && task.completedAt) {
                     entries.push({
                         _id: (task as any)._id,
                         title: task.title,
                         category: task.category,
                         pointsReward: task.pointsReward,
-                        coinReward: (task as any).coinReward ?? 0,
+                        coinReward: task.coinReward ?? 0,
                         completedAt: task.completedAt,
                         proofImageUrl: task.proofImageUrl,
                         date: plan.date,
                     });
                 }
-            });
-        });
+            }
+        }
 
-        // Sort by completedAt descending
         entries.sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
 
         res.json({ entries, total: entries.length });
@@ -276,27 +270,8 @@ router.get('/tomorrow', authMiddleware, async (req: AuthRequest, res: Response):
             const mandatoryTasks = await getMandatoryTasks();
             const todayForTomorrow = getStartOfDay();
             const todayPlan = await DailyPlan.findOne({ user: req.userId, date: todayForTomorrow });
-            const prevTasks: any[] = [];
 
-            if (todayPlan) {
-                todayPlan.tasks.forEach(t => {
-                    if (!t.isMandatory && t.adminApprovalStatus !== 'rejected') {
-                        prevTasks.push({
-                            templateId: t.templateId,
-                            title: t.title,
-                            pointsReward: t.pointsReward,
-                            coinReward: (t as any).coinReward ?? 5,
-                            isCustomTask: t.isCustomTask,
-                            isMandatory: false,
-                            adminApprovalStatus: t.adminApprovalStatus === 'pending' ? 'pending' : 'approved',
-                            category: t.category,
-                            durationMinutes: t.durationMinutes,
-                            scheduledTime: t.scheduledTime,
-                            isCompleted: false,
-                        });
-                    }
-                });
-            }
+            const prevTasks = todayPlan ? buildCarryoverTasks(todayPlan.tasks as any[]) : [];
 
             plan = await DailyPlan.create({
                 user: req.userId,
@@ -329,7 +304,7 @@ router.get('/date/:date', authMiddleware, async (req: AuthRequest, res: Response
     }
 });
 
-// Add task to plan (for tomorrow only or today if empty)
+// Add task to plan
 router.post('/:planId/tasks', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { planId } = req.params;
@@ -349,7 +324,6 @@ router.post('/:planId/tasks', authMiddleware, async (req: AuthRequest, res: Resp
         };
 
         if (templateId) {
-            // Add from template
             const template = await TaskTemplate.findById(templateId);
             if (!template) {
                 res.status(404).json({ error: 'Task template not found' });
@@ -367,7 +341,6 @@ router.post('/:planId/tasks', authMiddleware, async (req: AuthRequest, res: Resp
                 category: template.category,
             };
         } else if (customTitle) {
-            // Custom task
             taskData = {
                 ...taskData,
                 customTitle,
@@ -408,7 +381,7 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
         }
 
         const idx = parseInt(taskIndex);
-        if (idx < 0 || idx >= plan.tasks.length) {
+        if (isNaN(idx) || idx < 0 || idx >= plan.tasks.length) {
             res.status(400).json({ error: 'Invalid task index' });
             return;
         }
@@ -421,7 +394,7 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
             task.completedAt = new Date();
             if (proofImageUrl) task.proofImageUrl = proofImageUrl;
 
-            let grantedRewards: GrantedRewards & { xp?: number } = { coins: 0, gachaTickets: 0, items: [], levelUps: [], xp: 0 };
+            let grantedRewards: GrantedRewards & { xp?: number; questCoins?: number; questXp?: number; isLate?: boolean; latePercentage?: number } = { coins: 0, gachaTickets: 0, items: [], levelUps: [], xp: 0, questCoins: 0, questXp: 0, isLate: false, latePercentage: 0 };
 
             // Calculate Late Penalty
             let finalCoinReward = task.coinReward ?? task.pointsReward;
@@ -436,7 +409,7 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                     scheduledDate.setMinutes(scheduledDate.getMinutes() + task.durationMinutes);
                 }
 
-                const diffMinutes = Math.floor((task.completedAt.getTime() - scheduledDate.getTime()) / 60000);
+                const diffMinutes = Math.floor((task.completedAt!.getTime() - scheduledDate.getTime()) / 60000);
 
                 if (diffMinutes >= 15) {
                     const config = await PenaltyConfig.findOne();
@@ -460,7 +433,7 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                 }
             }
 
-            // Update user points immediately (for approved tasks)
+            // Update user stats for approved tasks
             if (task.adminApprovalStatus === 'approved') {
                 const user = await User.findById(req.userId);
                 if (user) {
@@ -468,17 +441,22 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                     user.currentPoints += finalXpReward;
                     user.totalPointsEarned += finalXpReward;
 
-                    const lvlRewards = await processLevelUpAsync(user, finalXpReward);
+                    const lvlRewards = await processLevelUp(user, finalXpReward);
 
-                    // Add actual task rewards to the granted payload so frontend modal can show exact values
                     grantedRewards.coins = finalCoinReward + lvlRewards.coins;
                     grantedRewards.xp = finalXpReward;
-
+                    grantedRewards.questCoins = finalCoinReward;
+                    grantedRewards.questXp = finalXpReward;
+                    grantedRewards.isLate = finalCoinReward < (task.coinReward ?? task.pointsReward) || finalXpReward < task.pointsReward;
+                    if (grantedRewards.isLate) {
+                        const originalCoin = task.coinReward ?? task.pointsReward;
+                        grantedRewards.latePercentage = originalCoin > 0 ? Math.round((1 - finalCoinReward / originalCoin) * 100) : 0;
+                    }
                     grantedRewards.gachaTickets += lvlRewards.gachaTickets;
                     grantedRewards.items.push(...lvlRewards.items);
                     grantedRewards.levelUps.push(...lvlRewards.levelUps);
 
-                    // Streak: check if user crossed the threshold this completion
+                    // Streak check
                     const completedApproved = plan.tasks.filter(
                         t => t.isCompleted && t.adminApprovalStatus === 'approved'
                     ).length;
@@ -499,19 +477,15 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                         grantedRewards.items.push(...mlRewards.items);
                     }
 
-                    // --- Boss Event Hit Logic ---
+                    // Boss Event Hit Logic
                     const activeBoss = await BossEvent.findOne({ status: 'active' });
                     if (activeBoss) {
-                        const damage = finalXpReward;
-                        const coinsGained = finalCoinReward;
-
-                        activeBoss.currentHp = Math.max(0, activeBoss.currentHp - damage);
+                        activeBoss.currentHp = Math.max(0, activeBoss.currentHp - finalXpReward);
                         if (activeBoss.currentHp === 0) {
                             activeBoss.status = 'completed';
                         }
                         await activeBoss.save();
 
-                        // Accumulate user rewards
                         let userRecord = await BossRecord.findOne({
                             eventId: activeBoss._id,
                             userId: req.userId,
@@ -526,9 +500,9 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                             });
                         }
 
-                        userRecord.totalDamageDealt += damage;
-                        userRecord.accumulatedCoins += coinsGained;
-                        userRecord.pendingDamageAnimation += damage;
+                        userRecord.totalDamageDealt += finalXpReward;
+                        userRecord.accumulatedCoins += finalCoinReward;
+                        userRecord.pendingDamageAnimation += finalXpReward;
                         await userRecord.save();
                     }
                 }
@@ -550,19 +524,54 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                     { upsert: true }
                 );
             }
+
+            await plan.save();
+            res.json({ plan, grantedRewards });
+            return;
         } else if (!isCompleted && wasCompleted) {
-            // Uncomplete - reverse points
+            // Uncomplete — reverse rewards (recalculate penalty-adjusted values)
+            const completedAt = task.completedAt;
             task.completedAt = undefined;
 
             if (task.adminApprovalStatus === 'approved') {
                 const user = await User.findById(req.userId);
                 if (user) {
-                    user.coins = Math.max(0, user.coins - (task.coinReward ?? task.pointsReward));
-                    user.xp = Math.max(0, user.xp - task.pointsReward);
-                    // Note: We leave user.level intact; users don't de-level automatically in Delta XP mechanics
-                    // Keep legacy fields in sync
-                    user.currentPoints = Math.max(0, user.currentPoints - task.pointsReward);
-                    user.totalPointsEarned = Math.max(0, user.totalPointsEarned - task.pointsReward);
+                    // Recalculate penalty-adjusted values to reverse the correct amount
+                    let coinToReverse = task.coinReward ?? task.pointsReward;
+                    let xpToReverse = task.pointsReward;
+
+                    if (task.scheduledTime && completedAt) {
+                        const [h, m] = task.scheduledTime.split(':').map(Number);
+                        const scheduledDate = new Date(plan.date);
+                        scheduledDate.setHours(h, m, 0, 0);
+                        if (task.durationMinutes) {
+                            scheduledDate.setMinutes(scheduledDate.getMinutes() + task.durationMinutes);
+                        }
+                        const diffMinutes = Math.floor((completedAt.getTime() - scheduledDate.getTime()) / 60000);
+                        if (diffMinutes >= 15) {
+                            const config = await PenaltyConfig.findOne();
+                            if (config && config.lateThresholds && config.lateThresholds.length > 0) {
+                                let applicableThreshold: { thresholdMinutes: number; deductionPercentage: number } | null = null;
+                                for (const t of config.lateThresholds) {
+                                    if (diffMinutes >= t.thresholdMinutes) {
+                                        if (!applicableThreshold || t.thresholdMinutes > applicableThreshold.thresholdMinutes) {
+                                            applicableThreshold = t;
+                                        }
+                                    }
+                                }
+                                if (applicableThreshold) {
+                                    const percent = applicableThreshold.deductionPercentage;
+                                    coinToReverse = Math.max(0, Math.floor(coinToReverse * (1 - percent / 100)));
+                                    xpToReverse = Math.max(0, Math.floor(xpToReverse * (1 - percent / 100)));
+                                }
+                            }
+                        }
+                    }
+
+                    user.coins = Math.max(0, user.coins - coinToReverse);
+                    user.xp = Math.max(0, user.xp - xpToReverse);
+                    user.currentPoints = Math.max(0, user.currentPoints - xpToReverse);
+                    user.totalPointsEarned = Math.max(0, user.totalPointsEarned - xpToReverse);
                     await user.save();
                 }
             }
@@ -576,7 +585,7 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
     }
 });
 
-// Update task details (e.g. scheduledTime)
+// Update task details
 router.patch('/:planId/tasks/:taskIndex', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { planId, taskIndex } = req.params;
@@ -586,7 +595,7 @@ router.patch('/:planId/tasks/:taskIndex', authMiddleware, async (req: AuthReques
         if (!plan) { res.status(404).json({ error: 'Plan not found' }); return; }
 
         const idx = parseInt(taskIndex);
-        if (idx < 0 || idx >= plan.tasks.length) {
+        if (isNaN(idx) || idx < 0 || idx >= plan.tasks.length) {
             res.status(400).json({ error: 'Invalid task index' });
             return;
         }
@@ -606,7 +615,12 @@ router.patch('/:planId/tasks/:taskIndex', authMiddleware, async (req: AuthReques
 router.patch('/:planId/reorder', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { planId } = req.params;
-        const { taskOrder } = req.body; // Array of task indices in new order
+        const { taskOrder } = req.body;
+
+        if (!Array.isArray(taskOrder)) {
+            res.status(400).json({ error: 'taskOrder must be an array' });
+            return;
+        }
 
         const plan = await DailyPlan.findOne({ _id: planId, user: req.userId });
 
@@ -615,9 +629,22 @@ router.patch('/:planId/reorder', authMiddleware, async (req: AuthRequest, res: R
             return;
         }
 
-        // Reorder tasks based on provided indices
-        const reorderedTasks = taskOrder.map((idx: number) => plan.tasks[idx]);
-        plan.tasks = reorderedTasks;
+        if (taskOrder.length !== plan.tasks.length) {
+            res.status(400).json({ error: 'taskOrder length must match tasks length' });
+            return;
+        }
+
+        // Validate all indices are valid and unique
+        const seen = new Set<number>();
+        for (const idx of taskOrder) {
+            if (typeof idx !== 'number' || idx < 0 || idx >= plan.tasks.length || seen.has(idx)) {
+                res.status(400).json({ error: 'Invalid task order indices' });
+                return;
+            }
+            seen.add(idx);
+        }
+
+        plan.tasks = taskOrder.map((idx: number) => plan.tasks[idx]);
 
         await plan.save();
         res.json({ plan });
@@ -639,13 +666,13 @@ router.delete('/:planId/tasks/:taskIndex', authMiddleware, async (req: AuthReque
         }
 
         const idx = parseInt(taskIndex);
-        if (idx < 0 || idx >= plan.tasks.length) {
+        if (isNaN(idx) || idx < 0 || idx >= plan.tasks.length) {
             res.status(400).json({ error: 'Invalid task index' });
             return;
         }
 
         if (plan.tasks[idx].isMandatory) {
-            res.status(403).json({ error: 'Không thể xóa nhiệm vụ bắt buộc' });
+            res.status(403).json({ error: 'Cannot delete mandatory tasks' });
             return;
         }
 
