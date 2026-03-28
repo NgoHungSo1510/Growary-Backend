@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { User, TaskTemplate, DailyPlan, Reward, Voucher, Event, Level, MilestoneReward, GachaItem, PenaltyConfig, NotificationConfig } from '../models';
+import { User, TaskTemplate, DailyPlan, Reward, Voucher, Event, Level, MilestoneReward, GachaItem, PenaltyConfig, NotificationConfig, CollectionTopic, CollectionEntry } from '../models';
 import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
 import { authMiddleware, adminMiddleware, AuthRequest } from '../middleware/auth';
@@ -606,6 +606,57 @@ router.delete('/notifications/:id', async (req: AuthRequest, res: Response): Pro
         res.json({ message: 'Deleted' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete notification config' });
+    }
+});
+
+// ==================== COLLECTION MANAGEMENT ====================
+
+router.get('/collections', async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const topics = await CollectionTopic.find().sort({ order: 1 });
+        res.json({ topics });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch collection topics' });
+    }
+});
+
+router.post('/collections', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const topic = new CollectionTopic(req.body);
+        await topic.save();
+        res.status(201).json({ topic });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create collection topic' });
+    }
+});
+
+router.put('/collections/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const topic = await CollectionTopic.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!topic) { res.status(404).json({ error: 'Topic not found' }); return; }
+        res.json({ topic });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update collection topic' });
+    }
+});
+
+router.delete('/collections/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await CollectionTopic.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Topic deleted' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete collection topic' });
+    }
+});
+
+router.get('/collections/:id/entries', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const entries = await CollectionEntry.find({ topicId: req.params.id })
+            .populate('userId', 'username email')
+            .sort({ createdAt: -1 });
+        res.json({ entries });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch collection entries' });
     }
 });
 

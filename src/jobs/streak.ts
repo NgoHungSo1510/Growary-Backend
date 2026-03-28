@@ -44,3 +44,18 @@ export function startStreakCronJob() {
     console.log('📅 Streak cron job scheduled (daily at 00:00 VN / 17:00 UTC)');
 }
 
+import { checkAndActivateBosses } from '../services/bossService';
+
+export function startBossSchedulerJob() {
+    // Run every minute to auto-switch boss status
+    cron.schedule('* * * * *', async () => {
+        try {
+            await checkAndActivateBosses();
+        } catch (error) {
+            console.error('❌ Boss scheduler error:', error);
+        }
+    });
+
+    console.log('👾 Boss scheduler started (every minute)');
+}
+

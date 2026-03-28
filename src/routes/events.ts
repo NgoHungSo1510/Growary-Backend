@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { checkAndActivateBosses } from '../services/bossService';
 import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
 
@@ -8,6 +9,8 @@ const router = Router();
 // Get active boss event and user's record
 router.get('/boss/active', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
+        await checkAndActivateBosses(); // JIT Check!
+
         const activeBoss = await BossEvent.findOne({ status: 'active' });
 
         if (!activeBoss) {
