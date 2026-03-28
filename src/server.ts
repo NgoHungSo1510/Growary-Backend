@@ -72,9 +72,9 @@ const startServer = async () => {
         await connectDB();
         startStreakCronJob();
         startBossSchedulerJob();
-        app.listen(PORT, () => {
-            console.log(`🚀 Server running on http://localhost:${PORT}`);
-            console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+        app.listen(PORT as number, '0.0.0.0', () => {
+            console.log(`🚀 Server running on port ${PORT} (0.0.0.0)`);
+            console.log(`📍 Health check: /api/health`);
         });
     } catch (error) {
         console.error('Failed to start server:', error);
