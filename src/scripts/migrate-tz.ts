@@ -46,7 +46,7 @@ async function runMigration() {
                         try {
                             const bd = new Date(backlog.originalDate);
                             if (!isNaN(bd.getTime()) && bd.getUTCHours() === 0) {
-                                backlog.originalDate = new Date(bd.getTime() - VN_OFFSET_MS).toISOString();
+                                backlog.originalDate = new Date(bd.getTime() - VN_OFFSET_MS);
                                 modified = true;
                             }
                         } catch (e) { }
