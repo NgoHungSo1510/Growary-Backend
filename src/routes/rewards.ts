@@ -3,7 +3,6 @@ import { Reward, Voucher, User } from '../models';
 import { authMiddleware, adminMiddleware, AuthRequest } from '../middleware/auth';
 import { v4 as uuidv4 } from 'uuid';
 import { checkAndGrantMilestones } from '../utils/milestones';
-import { VOUCHER_EXPIRY_DAYS } from '../constants';
 
 const router = Router();
 
@@ -117,7 +116,7 @@ router.post('/:rewardId/purchase', authMiddleware, async (req: AuthRequest, res:
 
         // Create voucher
         const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + VOUCHER_EXPIRY_DAYS);
+        expiresAt.setDate(expiresAt.getDate() + 30); // 30 days expiry
 
         const voucher = await Voucher.create({
             user: req.userId,

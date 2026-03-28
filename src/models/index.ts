@@ -15,3 +15,5 @@ export { GachaHistory, IGachaHistory } from './GachaHistory';
 export { PenaltyConfig, IPenaltyConfig } from './PenaltyConfig';
 export { NotificationConfig, INotificationConfig } from './NotificationConfig';
 export { Notification, INotification } from './Notification';
+export { CollectionTopic, ICollectionTopic } from './CollectionTopic';
+export { CollectionEntry, ICollectionEntry } from './CollectionEntry';

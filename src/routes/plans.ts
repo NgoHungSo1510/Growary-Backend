@@ -486,6 +486,11 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                         }
                         await activeBoss.save();
 
+                        if (activeBoss.status === 'completed') {
+                            const { distributeBossRewards } = await import('../services/bossService');
+                            distributeBossRewards(activeBoss._id.toString()).catch(console.error);
+                        }
+
                         let userRecord = await BossRecord.findOne({
                             eventId: activeBoss._id,
                             userId: req.userId,

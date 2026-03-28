@@ -5,7 +5,7 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 const router = Router();
 
 // Get user notifications
-router.get('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 20;
@@ -49,7 +49,7 @@ router.patch('/:id/read', authMiddleware, async (req: AuthRequest, res: Response
 });
 
 // Mark all as read
-router.post('/read-all', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/read-all', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         await Notification.updateMany(
             { userId: req.userId, isRead: false },
@@ -62,7 +62,7 @@ router.post('/read-all', authMiddleware, async (req: AuthRequest, res: Response)
 });
 
 // Get unread count
-router.get('/unread-count', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/unread-count', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const count = await Notification.countDocuments({ userId: req.userId, isRead: false });
         res.json({ count });

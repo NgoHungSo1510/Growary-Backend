@@ -18,7 +18,8 @@ import levelRoutes from './routes/levels';
 import eventRoutes from './routes/events';
 import gachaRoutes from './routes/gacha';
 import notificationRoutes from './routes/notifications';
-import { startStreakCronJob } from './jobs/streak';
+import collectionRoutes from './routes/collections';
+import { startStreakCronJob, startBossSchedulerJob } from './jobs/streak';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -49,6 +50,7 @@ app.use('/api/levels', levelRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/gacha', gachaRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/collections', collectionRoutes);
 
 // 404 Handler
 app.use((req, res) => {
@@ -67,11 +69,9 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // Start server
 const startServer = async () => {
     try {
-        if (!process.env.JWT_SECRET) {
-            throw new Error('FATAL: JWT_SECRET environment variable is not set. Server cannot start.');
-        }
         await connectDB();
         startStreakCronJob();
+        startBossSchedulerJob();
         app.listen(PORT, () => {
             console.log(`🚀 Server running on http://localhost:${PORT}`);
             console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
