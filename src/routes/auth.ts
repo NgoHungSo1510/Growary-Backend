@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User } from '../models';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { getJwtSecret } from '../constants';
 
 const router = Router();
 
@@ -41,7 +42,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
         // Generate token
         const token = jwt.sign(
             { userId: user._id.toString() },
-            process.env.JWT_SECRET || 'fallback_secret',
+            getJwtSecret(),
             { expiresIn: '7d' }
         );
 
@@ -89,7 +90,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         // Generate token
         const token = jwt.sign(
             { userId: user._id.toString() },
-            process.env.JWT_SECRET || 'fallback_secret',
+            getJwtSecret(),
             { expiresIn: '7d' }
         );
 

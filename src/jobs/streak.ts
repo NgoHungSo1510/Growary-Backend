@@ -2,12 +2,14 @@ import cron from 'node-cron';
 import { DailyPlan, User } from '../models';
 import { BossEvent } from '../models/BossEvent';
 import { STREAK_MIN_TASKS, BOSS_HEAL_AMOUNT, getStartOfDay } from '../constants';
+import { checkAndActivateBosses } from '../services/bossService';
 
 export function startStreakCronJob() {
     // 17:00 UTC = 00:00 Vietnam time (UTC+7)
     cron.schedule('0 17 * * *', async () => {
         console.log('⏰ Running daily streak check...');
         try {
+            const today = getStartOfDay();
             const yesterday = getStartOfDay();
             yesterday.setDate(yesterday.getDate() - 1);
 
@@ -21,8 +23,14 @@ export function startStreakCronJob() {
                 const user = await User.findById(plan.user);
                 if (!user) continue;
 
+                // Guard: skip if already processed for today
+                if (user.lastStreakCheckDate && user.lastStreakCheckDate.getTime() >= today.getTime()) {
+                    continue;
+                }
+
                 if (completedApproved < STREAK_MIN_TASKS) {
                     user.currentStreak = 0;
+                    user.lastStreakCheckDate = today;
                     await user.save();
                     console.log(`  ❌ ${user.username}: streak reset (${completedApproved}/${STREAK_MIN_TASKS})`);
 
@@ -43,8 +51,6 @@ export function startStreakCronJob() {
 
     console.log('📅 Streak cron job scheduled (daily at 00:00 VN / 17:00 UTC)');
 }
-
-import { checkAndActivateBosses } from '../services/bossService';
 
 export function startBossSchedulerJob() {
     // Run every minute to auto-switch boss status

@@ -9,9 +9,10 @@ export interface IBossEvent extends Document {
     currentHp: number;
     baseRewardCoins: number;
     baseRewardXp: number;
-    gachaTickets: number; // For future Concept 3 integration
-    rewardItems: mongoose.Types.ObjectId[]; // Shop items gifted to user
+    gachaTickets: number;
+    rewardItems: mongoose.Types.ObjectId[];
     status: 'upcoming' | 'active' | 'completed' | 'failed';
+    isRewardDistributed: boolean;
     colorBg?: string;
     colorIcon?: string;
     iconName?: string;
@@ -41,8 +42,9 @@ const BossEventSchema = new Schema<IBossEvent>(
             enum: ['upcoming', 'active', 'completed', 'failed'],
             default: 'upcoming',
         },
-        colorBg: { type: String, default: '#ef4444' }, // default red
-        colorIcon: { type: String, default: '#ffffff' }, // default white
+        isRewardDistributed: { type: Boolean, default: false },
+        colorBg: { type: String, default: '#ef4444' },
+        colorIcon: { type: String, default: '#ffffff' },
         iconName: { type: String, default: 'smart-toy' },
     },
     { timestamps: true }

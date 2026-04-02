@@ -4,6 +4,7 @@ import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
 import { authMiddleware, adminMiddleware, AuthRequest } from '../middleware/auth';
 import { processLevelUp } from './plans';
+import { escapeRegex } from '../constants';
 
 const router = Router();
 
@@ -98,9 +99,10 @@ router.get('/users', async (req: AuthRequest, res: Response): Promise<void> => {
         const query: any = { role: 'user' };
 
         if (search) {
+            const safeSearch = escapeRegex(search as string);
             query.$or = [
-                { username: { $regex: search, $options: 'i' } },
-                { email: { $regex: search, $options: 'i' } },
+                { username: { $regex: safeSearch, $options: 'i' } },
+                { email: { $regex: safeSearch, $options: 'i' } },
             ];
         }
 
@@ -246,6 +248,7 @@ router.patch('/tasks/:planId/:taskId/approve', async (req: AuthRequest, res: Res
                 user.currentPoints += task.pointsReward;
 
                 await processLevelUp(user, task.pointsReward);
+                await user.save();
             }
         }
 

@@ -3,6 +3,7 @@ import { GachaItem, GachaHistory, User, Voucher } from '../models';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import { processLevelUp } from './plans';
 
 // Simple Pseudo-Random Number Generator based on seed
 function seededRandom(seed: number) {
@@ -104,7 +105,9 @@ router.post('/spin', authMiddleware, async (req: AuthRequest, res: any) => {
         if (selectedItem.type === 'coins' && selectedItem.value) {
             user.coins += selectedItem.value;
         } else if (selectedItem.type === 'xp' && selectedItem.value) {
-            user.xp += selectedItem.value;
+            user.currentPoints += selectedItem.value;
+            user.totalPointsEarned += selectedItem.value;
+            await processLevelUp(user, selectedItem.value);
         } else if (selectedItem.type === 'tickets' && selectedItem.value) {
             // Technically this gives tickets back
             user.gachaTickets += selectedItem.value;
@@ -112,13 +115,16 @@ router.post('/spin', authMiddleware, async (req: AuthRequest, res: any) => {
             // Give user a voucher for the item
             const reward = selectedItem.rewardId as any;
             const code = `GACHA-${uuidv4().substring(0, 8).toUpperCase()}`;
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + 30);
             const voucher = new Voucher({
                 code,
                 reward: reward._id,
                 user: user._id,
-                status: 'unused',
-                isRead: false,
-                source: 'Sự kiện Gacha',
+                status: 'active',
+                pointCostSnapshot: 0,
+                rewardTitleSnapshot: reward.title || selectedItem.name,
+                expiresAt,
             });
             await voucher.save();
             grantedItemDetails = reward; // Attach reward details to response

@@ -119,7 +119,7 @@ const UserSchema = new Schema<IUser>(
         },
         pendingPenalties: [
             {
-                questId: { type: Schema.Types.ObjectId, ref: 'Quest' },
+                questId: { type: Schema.Types.ObjectId, ref: 'TaskTemplate' },
                 questTitle: { type: String },
                 penaltyAmount: { type: Number, required: true },
                 reason: { type: String, enum: ['missed', 'late'], required: true },
