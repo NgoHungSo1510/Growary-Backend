@@ -17,13 +17,14 @@ router.get('/topics', authMiddleware, async (req: AuthRequest, res: Response): P
     }
 });
 
-// Get user's entries for a specific topic
+// Get global entries for a specific topic
 router.get('/topics/:topicId/entries', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
+        // Shared global entries
         const entries = await CollectionEntry.find({
-            userId: req.userId,
             topicId: req.params.topicId,
-        }).sort({ slotIndex: 1 });
+            status: 'approved'
+        }).sort({ slotIndex: 1 }).populate('userId', 'username avatar collectionTier');
 
         res.json({ entries });
     } catch (error) {
@@ -54,26 +55,14 @@ router.post('/topics/:topicId/submit', authMiddleware, async (req: AuthRequest, 
             return;
         }
 
-        // Check if slot already taken by this user
+        // Check if slot already taken globally
         const existingEntry = await CollectionEntry.findOne({
-            userId: req.userId,
             topicId,
             slotIndex,
+            status: { $in: ['pending', 'approved'] }
         });
         if (existingEntry) {
-            res.status(400).json({ error: 'This slot is already filled' });
-            return;
-        }
-
-        // Check for duplicate entries in same topic (same title, case-insensitive)
-        const duplicateTitle = await CollectionEntry.findOne({
-            userId: req.userId,
-            topicId,
-            title: { $regex: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-            status: { $in: ['pending', 'approved'] },
-        });
-        if (duplicateTitle) {
-            res.status(400).json({ error: 'Bạn đã gửi vật phẩm này rồi! Hãy thử vật khác.' });
+            res.status(400).json({ error: 'This slot is already filled by someone else' });
             return;
         }
 
@@ -95,7 +84,9 @@ router.post('/topics/:topicId/submit', authMiddleware, async (req: AuthRequest, 
         });
 
         // If approved, give rewards immediately
-        let rewardGiven = null;
+        let rewardGiven: any = null;
+        let isTierUnlock = false;
+
         if (status === 'approved') {
             const user = await User.findById(req.userId);
             if (user) {
@@ -109,32 +100,72 @@ router.post('/topics/:topicId/submit', authMiddleware, async (req: AuthRequest, 
                 await entry.save();
 
                 rewardGiven = { coins: reward.coins, xp: reward.xp, gachaTickets: reward.gachaTickets };
+            }
 
-                // Check milestone rewards
-                const approvedCount = await CollectionEntry.countDocuments({
-                    userId: req.userId,
-                    topicId,
-                    status: 'approved',
-                });
+            // Global Metrics checks
+            const globalApprovedCount = await CollectionEntry.countDocuments({
+                topicId,
+                status: 'approved',
+            });
 
-                const milestone = topic.milestoneRewards.find(m => m.target === approvedCount);
-                if (milestone) {
-                    user.coins += milestone.coins;
-                    user.xp += milestone.xp;
-                    user.totalPointsEarned += milestone.xp;
-                    user.currentPoints += milestone.xp;
-                    await user.save();
+            // Global Milestone Rewards Checkout
+            const milestone = topic.milestoneRewards.find(m => m.target === globalApprovedCount);
+            if (milestone) {
+                const contributors = await CollectionEntry.distinct('userId', { topicId, status: 'approved' });
+                if (contributors.length > 0) {
+                    await User.updateMany(
+                        { _id: { $in: contributors } },
+                        { 
+                            $inc: { 
+                                coins: milestone.coins, 
+                                xp: milestone.xp, 
+                                gachaTickets: milestone.gachaTickets,
+                                currentPoints: milestone.xp,
+                                totalPointsEarned: milestone.xp
+                            } 
+                        }
+                    );
 
-                    rewardGiven = {
-                        ...rewardGiven,
-                        milestone: {
-                            target: milestone.target,
-                            coins: milestone.coins,
-                            xp: milestone.xp,
-                            gachaTickets: milestone.gachaTickets,
-                        },
+                    rewardGiven.milestone = {
+                        target: milestone.target,
+                        coins: milestone.coins,
+                        xp: milestone.xp,
+                        gachaTickets: milestone.gachaTickets,
                     };
                 }
+            }
+
+            // Global Completion Check
+            if (globalApprovedCount >= topic.totalSlots && !topic.isCompleted) {
+                topic.isCompleted = true;
+                await topic.save();
+
+                const contributors = await CollectionEntry.distinct('userId', { topicId, status: 'approved' });
+                if (contributors.length > 0 && topic.completionRewardPool) {
+                    const share = {
+                        coins: Math.floor((topic.completionRewardPool.coins || 0) / contributors.length),
+                        xp: Math.floor((topic.completionRewardPool.xp || 0) / contributors.length),
+                        gachaTickets: Math.floor((topic.completionRewardPool.gachaTickets || 0) / contributors.length),
+                    };
+                    
+                    if (share.coins > 0 || share.xp > 0 || share.gachaTickets > 0) {
+                        await User.updateMany(
+                            { _id: { $in: contributors } },
+                            { 
+                                $inc: { 
+                                    coins: share.coins, 
+                                    xp: share.xp, 
+                                    currentPoints: share.xp, 
+                                    totalPointsEarned: share.xp, 
+                                    gachaTickets: share.gachaTickets 
+                                } 
+                            }
+                        );
+                    }
+                }
+                
+                isTierUnlock = true;
+                rewardGiven = { ...rewardGiven, isTierUnlock };
             }
         }
 
@@ -145,6 +176,20 @@ router.post('/topics/:topicId/submit', authMiddleware, async (req: AuthRequest, 
             return;
         }
         console.error('Failed to submit collection entry:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+
+// Get user's entire collection history
+router.get('/history', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const entries = await CollectionEntry.find({ userId: req.userId, status: 'approved' })
+            .sort({ createdAt: -1 })
+            .populate('topicId', 'title colorBg');
+        res.json({ entries });
+    } catch (error) {
+        console.error('Failed to get history:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

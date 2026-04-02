@@ -402,8 +402,7 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
 
             if (task.scheduledTime) {
                 const [h, m] = task.scheduledTime.split(':').map(Number);
-                const scheduledDate = new Date(plan.date);
-                scheduledDate.setHours(h, m, 0, 0);
+                const scheduledDate = new Date(plan.date.getTime() + (h * 60 * 60 * 1000) + (m * 60 * 1000));
 
                 if (task.durationMinutes) {
                     scheduledDate.setMinutes(scheduledDate.getMinutes() + task.durationMinutes);
@@ -547,8 +546,7 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
 
                     if (task.scheduledTime && completedAt) {
                         const [h, m] = task.scheduledTime.split(':').map(Number);
-                        const scheduledDate = new Date(plan.date);
-                        scheduledDate.setHours(h, m, 0, 0);
+                        const scheduledDate = new Date(plan.date.getTime() + (h * 60 * 60 * 1000) + (m * 60 * 1000));
                         if (task.durationMinutes) {
                             scheduledDate.setMinutes(scheduledDate.getMinutes() + task.durationMinutes);
                         }

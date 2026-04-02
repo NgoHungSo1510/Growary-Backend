@@ -20,6 +20,12 @@ export interface ICollectionTopic extends Document {
         gachaTickets: number;
     };
     milestoneRewards: IMilestoneRewardConfig[];
+    completionRewardPool: {
+        coins: number;
+        xp: number;
+        gachaTickets: number;
+    };
+    isCompleted: boolean;
     isActive: boolean;
     order: number;
     createdAt: Date;
@@ -50,12 +56,18 @@ const CollectionTopicSchema = new Schema<ICollectionTopic>(
             gachaTickets: { type: Number, default: 0 },
         },
         milestoneRewards: [MilestoneRewardSubSchema],
+        completionRewardPool: {
+            coins: { type: Number, default: 0 },
+            xp: { type: Number, default: 0 },
+            gachaTickets: { type: Number, default: 0 },
+        },
         isActive: { type: Boolean, default: true },
+        isCompleted: { type: Boolean, default: false },
         order: { type: Number, default: 0 },
     },
     { timestamps: true }
 );
 
-CollectionTopicSchema.index({ isActive: 1, order: 1 });
+CollectionTopicSchema.index({ isActive: 1, isCompleted: 1, order: 1 });
 
 export const CollectionTopic = mongoose.model<ICollectionTopic>('CollectionTopic', CollectionTopicSchema);
