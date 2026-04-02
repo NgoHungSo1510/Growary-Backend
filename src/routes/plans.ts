@@ -504,8 +504,9 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                             });
                         }
 
+                        // Vẫn thưởng đầy đủ XP nhưng Xu cho Boss chỉ lấy 50% đúng triết lý chống lạm phát
                         userRecord.totalDamageDealt += finalXpReward;
-                        userRecord.accumulatedCoins += finalCoinReward;
+                        userRecord.accumulatedCoins += Math.floor(finalCoinReward / 2);
                         userRecord.pendingDamageAnimation += finalXpReward;
                         await userRecord.save();
                     }
