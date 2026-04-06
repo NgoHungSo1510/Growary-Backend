@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User } from '../models';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { getJwtSecret } from '../constants';
 
 const router = Router();
 
@@ -17,13 +18,16 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        // Check existing user
-        const existingUser = await User.findOne({
-            $or: [{ email }, { username }],
-        });
+        // Check existing user with specific errors
+        const existingEmail = await User.findOne({ email });
+        if (existingEmail) {
+            res.status(400).json({ error: 'Email này đã được đăng ký. Vui lòng thử đăng nhập hoặc dùng email khác.' });
+            return;
+        }
 
-        if (existingUser) {
-            res.status(400).json({ error: 'User already exists' });
+        const existingUsername = await User.findOne({ username });
+        if (existingUsername) {
+            res.status(400).json({ error: 'Tên nhân vật (username) này đã tồn tại. Vui lòng sáng tạo một tên khác.' });
             return;
         }
 
@@ -41,7 +45,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
         // Generate token
         const token = jwt.sign(
             { userId: user._id.toString() },
-            process.env.JWT_SECRET || 'fallback_secret',
+            getJwtSecret(),
             { expiresIn: '7d' }
         );
 
@@ -89,7 +93,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         // Generate token
         const token = jwt.sign(
             { userId: user._id.toString() },
-            process.env.JWT_SECRET || 'fallback_secret',
+            getJwtSecret(),
             { expiresIn: '7d' }
         );
 

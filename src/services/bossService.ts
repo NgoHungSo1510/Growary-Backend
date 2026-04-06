@@ -1,12 +1,21 @@
 import { User, BossEvent, BossRecord, Journal, Voucher } from '../models';
 import { processLevelUp } from '../routes/plans';
 import { v4 as uuidv4 } from 'uuid';
-import { VOUCHER_EXPIRY_DAYS } from '../constants';
+import { VOUCHER_EXPIRY_DAYS, getStartOfDay } from '../constants';
 
 export const distributeBossRewards = async (bossId: string) => {
     try {
-        const boss = await BossEvent.findById(bossId).populate('rewardItems');
-        if (!boss) return;
+        // Atomically claim the distribution to prevent race conditions (H2 fix)
+        const boss = await BossEvent.findOneAndUpdate(
+            { _id: bossId, isRewardDistributed: false },
+            { isRewardDistributed: true },
+            { new: true }
+        );
+        if (!boss) {
+            console.log(`⏭️ Boss ${bossId}: rewards already distributed, skipping.`);
+            return;
+        }
+        await boss.populate('rewardItems');
 
         console.log(`🎁 Distributing rewards for Boss: ${boss.title}`);
 
@@ -16,10 +25,10 @@ export const distributeBossRewards = async (bossId: string) => {
             const user = await User.findById(record.userId);
             if (!user) continue;
 
-            // Accumulated coins from quests + Base Boss Coins
+            // Boss reward = base boss reward + accumulated coins from quests (50% stored during event)
             const bonusCoins = boss.baseRewardCoins + record.accumulatedCoins;
-            // Accumulated XP from quests + Base Boss XP
-            const bonusXp = boss.baseRewardXp + record.totalDamageDealt;
+            // H3 fix: Only base boss XP as bonus — totalDamageDealt is quest XP already granted in plans.ts
+            const bonusXp = boss.baseRewardXp;
 
             user.coins += bonusCoins;
             user.currentPoints += bonusXp;
@@ -54,13 +63,14 @@ export const distributeBossRewards = async (bossId: string) => {
             }
 
             // Process level up from bonus XP
-            await processLevelUp(user, bonusXp);
+            if (bonusXp > 0) {
+                await processLevelUp(user, bonusXp);
+            }
             
             await user.save();
 
             // Auto-log to journal
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
+            const today = getStartOfDay();
 
             await Journal.findOneAndUpdate(
                 { user: user._id, date: today },
@@ -99,7 +109,8 @@ export const checkAndActivateBosses = async () => {
             await boss.save();
             console.log(`👾 Boss "${boss.title}" expired → ${boss.status}`);
 
-            if (boss.status === 'completed') {
+            // Only distribute if completed AND not already distributed (H2 guard)
+            if (boss.status === 'completed' && !boss.isRewardDistributed) {
                 distributeBossRewards(boss._id.toString()).catch(console.error);
             }
         }
@@ -123,3 +134,4 @@ export const checkAndActivateBosses = async () => {
         console.error('❌ Error in checkAndActivateBosses:', error);
     }
 };
+

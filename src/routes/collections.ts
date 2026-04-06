@@ -3,6 +3,7 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { CollectionTopic } from '../models/CollectionTopic';
 import { CollectionEntry } from '../models/CollectionEntry';
 import { User } from '../models/User';
+import { processLevelUp } from './plans';
 
 const router = Router();
 
@@ -92,9 +93,14 @@ router.post('/topics/:topicId/submit', authMiddleware, async (req: AuthRequest, 
             if (user) {
                 const reward = topic.rewardPerEntry;
                 user.coins += reward.coins;
-                user.xp += reward.xp;
                 user.totalPointsEarned += reward.xp;
                 user.currentPoints += reward.xp;
+                if (reward.gachaTickets > 0) {
+                    user.gachaTickets += reward.gachaTickets;
+                }
+                if (reward.xp > 0) {
+                    await processLevelUp(user, reward.xp);
+                }
                 await user.save();
                 entry.rewardClaimed = true;
                 await entry.save();

@@ -1,7 +1,7 @@
 import { User, MilestoneReward, Voucher } from '../models';
 import { v4 as uuidv4 } from 'uuid';
 import mongoose from 'mongoose';
-import { GrantedRewards } from '../routes/plans';
+import { GrantedRewards } from '../types';
 
 export async function checkAndGrantMilestones(userId: string | mongoose.Types.ObjectId): Promise<GrantedRewards> {
     const rewards: GrantedRewards = { coins: 0, gachaTickets: 0, items: [], levelUps: [] };

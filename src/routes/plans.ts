@@ -7,15 +7,13 @@ import { checkAndGrantMilestones } from '../utils/milestones';
 import { v4 as uuidv4 } from 'uuid';
 import { STREAK_MIN_TASKS, VOUCHER_EXPIRY_DAYS, getStartOfDay } from '../constants';
 import { ILevel } from '../models/Level';
+import { GrantedRewards } from '../types';
+import { calculatePenaltyAdjustedReward } from '../utils/penalty';
 
 const router = Router();
 
-export interface GrantedRewards {
-    coins: number;
-    gachaTickets: number;
-    items: string[];
-    levelUps: number[];
-}
+// Re-export for backward compatibility
+export type { GrantedRewards };
 
 /**
  * Process XP addition and level-up logic.
@@ -153,14 +151,10 @@ router.get('/today', authMiddleware, async (req: AuthRequest, res: Response): Pr
                 const incompleteTasks = yesterdayPlan.tasks.filter(
                     t => !t.isCompleted && t.adminApprovalStatus !== 'rejected'
                 );
-                const completedApprovedTasks = yesterdayPlan.tasks.filter(
-                    t => t.isCompleted && t.adminApprovalStatus === 'approved'
-                );
 
-                if (user) {
-                    if (completedApprovedTasks.length < STREAK_MIN_TASKS) {
-                        user.currentStreak = 0;
-                    }
+                // M2 fix: Streak reset is handled ONLY by the cron job (streak.ts)
+                // Here we only process missed-quest penalties, guarded by lastStreakCheckDate
+                if (user && (!user.lastStreakCheckDate || user.lastStreakCheckDate.getTime() < today.getTime())) {
                     if (incompleteTasks.length > 0) {
                         const config = await PenaltyConfig.findOne();
                         const penaltyCoin = config ? config.missedQuestPenaltyCoin : 50;
@@ -397,40 +391,9 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
             let grantedRewards: GrantedRewards & { xp?: number; questCoins?: number; questXp?: number; isLate?: boolean; latePercentage?: number } = { coins: 0, gachaTickets: 0, items: [], levelUps: [], xp: 0, questCoins: 0, questXp: 0, isLate: false, latePercentage: 0 };
 
             // Calculate Late Penalty
-            let finalCoinReward = task.coinReward ?? task.pointsReward;
-            let finalXpReward = task.pointsReward;
-
-            if (task.scheduledTime) {
-                const [h, m] = task.scheduledTime.split(':').map(Number);
-                const scheduledDate = new Date(plan.date.getTime() + (h * 60 * 60 * 1000) + (m * 60 * 1000));
-
-                if (task.durationMinutes) {
-                    scheduledDate.setMinutes(scheduledDate.getMinutes() + task.durationMinutes);
-                }
-
-                const diffMinutes = Math.floor((task.completedAt!.getTime() - scheduledDate.getTime()) / 60000);
-
-                if (diffMinutes >= 15) {
-                    const config = await PenaltyConfig.findOne();
-                    if (config && config.lateThresholds && config.lateThresholds.length > 0) {
-                        let applicableThreshold: { thresholdMinutes: number; deductionPercentage: number } | null = null;
-
-                        for (const t of config.lateThresholds) {
-                            if (diffMinutes >= t.thresholdMinutes) {
-                                if (!applicableThreshold || t.thresholdMinutes > applicableThreshold.thresholdMinutes) {
-                                    applicableThreshold = t;
-                                }
-                            }
-                        }
-
-                        if (applicableThreshold) {
-                            const percent = applicableThreshold.deductionPercentage;
-                            finalCoinReward = Math.max(0, Math.floor(finalCoinReward * (1 - percent / 100)));
-                            finalXpReward = Math.max(0, Math.floor(finalXpReward * (1 - percent / 100)));
-                        }
-                    }
-                }
-            }
+            const penaltyResult = await calculatePenaltyAdjustedReward(task, plan.date, task.completedAt!);
+            const finalCoinReward = penaltyResult.coins;
+            const finalXpReward = penaltyResult.xp;
 
             // Update user stats for approved tasks
             if (task.adminApprovalStatus === 'approved') {
@@ -542,35 +505,11 @@ router.patch('/:planId/tasks/:taskIndex/complete', authMiddleware, async (req: A
                 const user = await User.findById(req.userId);
                 if (user) {
                     // Recalculate penalty-adjusted values to reverse the correct amount
-                    let coinToReverse = task.coinReward ?? task.pointsReward;
-                    let xpToReverse = task.pointsReward;
-
-                    if (task.scheduledTime && completedAt) {
-                        const [h, m] = task.scheduledTime.split(':').map(Number);
-                        const scheduledDate = new Date(plan.date.getTime() + (h * 60 * 60 * 1000) + (m * 60 * 1000));
-                        if (task.durationMinutes) {
-                            scheduledDate.setMinutes(scheduledDate.getMinutes() + task.durationMinutes);
-                        }
-                        const diffMinutes = Math.floor((completedAt.getTime() - scheduledDate.getTime()) / 60000);
-                        if (diffMinutes >= 15) {
-                            const config = await PenaltyConfig.findOne();
-                            if (config && config.lateThresholds && config.lateThresholds.length > 0) {
-                                let applicableThreshold: { thresholdMinutes: number; deductionPercentage: number } | null = null;
-                                for (const t of config.lateThresholds) {
-                                    if (diffMinutes >= t.thresholdMinutes) {
-                                        if (!applicableThreshold || t.thresholdMinutes > applicableThreshold.thresholdMinutes) {
-                                            applicableThreshold = t;
-                                        }
-                                    }
-                                }
-                                if (applicableThreshold) {
-                                    const percent = applicableThreshold.deductionPercentage;
-                                    coinToReverse = Math.max(0, Math.floor(coinToReverse * (1 - percent / 100)));
-                                    xpToReverse = Math.max(0, Math.floor(xpToReverse * (1 - percent / 100)));
-                                }
-                            }
-                        }
-                    }
+                    const reverseResult = completedAt
+                        ? await calculatePenaltyAdjustedReward(task, plan.date, completedAt)
+                        : { coins: task.coinReward ?? task.pointsReward, xp: task.pointsReward };
+                    const coinToReverse = reverseResult.coins;
+                    const xpToReverse = reverseResult.xp;
 
                     user.coins = Math.max(0, user.coins - coinToReverse);
                     user.xp = Math.max(0, user.xp - xpToReverse);
