@@ -166,6 +166,21 @@ router.patch('/users/:id/points', async (req: AuthRequest, res: Response): Promi
     }
 });
 
+router.put('/users/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const updates = req.body;
+        // prevent changing password or role directly here if not wanted, or allow it
+        delete updates.password; // Keep it safe
+
+        const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true }).select('-password');
+        if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+
+        res.json({ user, message: 'User updated successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update user' });
+    }
+});
+
 // ==================== TASK APPROVAL (CUSTOM TASKS) ====================
 
 router.get('/tasks/pending', async (_req: AuthRequest, res: Response): Promise<void> => {
