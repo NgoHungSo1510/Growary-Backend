@@ -144,10 +144,10 @@ router.post('/topics/:topicId/submit', authMiddleware, async (req: AuthRequest, 
             // Global Completion Check
             if (globalApprovedCount >= topic.totalSlots && !topic.isCompleted) {
                 topic.isCompleted = true;
-                await topic.save();
 
                 const contributors = await CollectionEntry.distinct('userId', { topicId, status: 'approved' });
-                if (contributors.length > 0 && topic.completionRewardPool) {
+                if (!topic.hasGivenCompletionReward && contributors.length > 0 && topic.completionRewardPool) {
+                    topic.hasGivenCompletionReward = true;
                     const share = {
                         coins: Math.floor((topic.completionRewardPool.coins || 0) / contributors.length),
                         xp: Math.floor((topic.completionRewardPool.xp || 0) / contributors.length),
@@ -170,6 +170,7 @@ router.post('/topics/:topicId/submit', authMiddleware, async (req: AuthRequest, 
                     }
                 }
                 
+                await topic.save();
                 isTierUnlock = true;
                 rewardGiven = { ...rewardGiven, isTierUnlock };
             }

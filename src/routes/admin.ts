@@ -663,4 +663,48 @@ router.get('/collections/:id/entries', async (req: AuthRequest, res: Response): 
     }
 });
 
+router.delete('/collections/entries/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const entry = await CollectionEntry.findById(req.params.id);
+        if (!entry) {
+            res.status(404).json({ error: 'Entry not found' });
+            return;
+        }
+
+        const topic = await CollectionTopic.findById(entry.topicId);
+        if (!topic) {
+            res.status(404).json({ error: 'Topic not found' });
+            return;
+        }
+
+        await CollectionEntry.findByIdAndDelete(req.params.id);
+
+        if (topic.isCompleted) {
+            const approvedCount = await CollectionEntry.countDocuments({ topicId: topic._id, status: 'approved' });
+            if (approvedCount < topic.totalSlots) {
+                topic.isCompleted = false;
+                await topic.save();
+            }
+        }
+
+        // Send notification
+        try {
+            const Notification = require('../models/Notification').Notification;
+            await Notification.create({
+                userId: entry.userId,
+                title: 'Ảnh bộ sưu tập không hợp lệ',
+                message: `Bức ảnh "${entry.title}" của bạn trong Tầng ${topic.order} đã bị từ chối do không hợp lệ. Hãy bổ sung ảnh khác để mở khóa lại nhé! (Bạn sẽ không nhận lại quà hoàn thành Tầng này nếu đã nhận trước đó).`,
+                type: 'system'
+            });
+        } catch (notifError) {
+            console.error('Failed to create notification for deleted entry:', notifError);
+        }
+
+        res.json({ message: 'Entry deleted successfully' });
+    } catch (error) {
+        console.error('Failed to delete entry:', error);
+        res.status(500).json({ error: 'Failed to delete collection entry' });
+    }
+});
+
 export default router;

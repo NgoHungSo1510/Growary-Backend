@@ -26,6 +26,7 @@ export interface ICollectionTopic extends Document {
         gachaTickets: number;
     };
     isCompleted: boolean;
+    hasGivenCompletionReward: boolean;
     isActive: boolean;
     order: number;
     createdAt: Date;
@@ -63,6 +64,7 @@ const CollectionTopicSchema = new Schema<ICollectionTopic>(
         },
         isActive: { type: Boolean, default: true },
         isCompleted: { type: Boolean, default: false },
+        hasGivenCompletionReward: { type: Boolean, default: false },
         order: { type: Number, default: 0 },
     },
     { timestamps: true }
