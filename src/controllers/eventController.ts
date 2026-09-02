@@ -1,0 +1,43 @@
+import { Response } from 'express';
+import { AuthRequest } from '../middleware/auth';
+import { checkAndActivateBosses } from '../services/bossService';
+import { BossEvent } from '../models/BossEvent';
+import { BossRecord } from '../models/BossRecord';
+
+export const getActiveBoss = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await checkAndActivateBosses();
+        const activeBoss = await BossEvent.findOne({ status: 'active' });
+
+        if (!activeBoss) { res.json({ activeBoss: null, userRecord: null }); return; }
+
+        let userRecord = await BossRecord.findOne({ eventId: activeBoss._id, userId: req.userId });
+        if (!userRecord) {
+            userRecord = await BossRecord.create({ eventId: activeBoss._id, userId: req.userId });
+        }
+
+        res.json({ activeBoss, userRecord });
+    } catch (error) {
+        console.error('Failed to get active boss:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const animateBossDamage = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const activeBoss = await BossEvent.findOne({ status: 'active' });
+        if (!activeBoss) { res.status(404).json({ error: 'No active boss found' }); return; }
+
+        const userRecord = await BossRecord.findOne({ eventId: activeBoss._id, userId: req.userId });
+        if (!userRecord) { res.status(404).json({ error: 'User record not found' }); return; }
+
+        const animatedDamage = userRecord.pendingDamageAnimation;
+        userRecord.pendingDamageAnimation = 0;
+        await userRecord.save();
+
+        res.json({ success: true, animatedDamage });
+    } catch (error) {
+        console.error('Failed to animate boss damage:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};

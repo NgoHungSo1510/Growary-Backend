@@ -17,3 +17,7 @@ export { NotificationConfig, INotificationConfig } from './NotificationConfig';
 export { Notification, INotification } from './Notification';
 export { CollectionTopic, ICollectionTopic } from './CollectionTopic';
 export { CollectionEntry, ICollectionEntry } from './CollectionEntry';
+export { QuizEvent, IQuizEvent } from './QuizEvent';
+export { QuizTopic, IQuizTopic } from './QuizTopic';
+export { QuizQuestion, IQuizQuestion } from './QuizQuestion';
+export { QuizAttempt, IQuizAttempt } from './QuizAttempt';

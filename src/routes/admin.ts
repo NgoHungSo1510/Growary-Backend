@@ -3,7 +3,7 @@ import { User, TaskTemplate, DailyPlan, Reward, Voucher, Event, Level, Milestone
 import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
 import { authMiddleware, adminMiddleware, AuthRequest } from '../middleware/auth';
-import { processLevelUp } from './plans';
+import { processLevelUp } from '../services/levelService';
 import { escapeRegex } from '../constants';
 
 const router = Router();
@@ -720,6 +720,95 @@ router.delete('/collections/entries/:id', async (req: AuthRequest, res: Response
         console.error('Failed to delete entry:', error);
         res.status(500).json({ error: 'Failed to delete collection entry' });
     }
+});
+
+// ==================== QUIZ EVENT MANAGEMENT ====================
+import { QuizEvent } from '../models/QuizEvent';
+import { QuizTopic } from '../models/QuizTopic';
+import { QuizQuestion } from '../models/QuizQuestion';
+import { QuizAttempt } from '../models/QuizAttempt';
+
+// GET /admin/quiz/events
+router.get('/quiz/events', async (_req, res) => {
+  const events = await QuizEvent.find().sort({ createdAt: -1 });
+  res.json({ events });
+});
+
+// POST /admin/quiz/events
+router.post('/quiz/events', async (req, res) => {
+  const event = await QuizEvent.create(req.body);
+  res.status(201).json({ event });
+});
+
+// PUT /admin/quiz/events/:id
+router.put('/quiz/events/:id', async (req, res) => {
+  const event = await QuizEvent.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  if (!event) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json({ event });
+});
+
+// DELETE /admin/quiz/events/:id
+router.delete('/quiz/events/:id', async (req, res) => {
+  await QuizEvent.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
+});
+
+// GET /admin/quiz/topics
+router.get('/quiz/topics', async (_req, res) => {
+  const topics = await QuizTopic.find().sort({ name: 1 });
+  // Đếm số câu hỏi mỗi topic
+  const topicsWithCount = await Promise.all(topics.map(async t => ({
+    ...t.toObject(),
+    questionCount: await QuizQuestion.countDocuments({ topic: t._id }),
+  })));
+  res.json({ topics: topicsWithCount });
+});
+
+// POST /admin/quiz/topics
+router.post('/quiz/topics', async (req, res) => {
+  const topic = await QuizTopic.create(req.body);
+  res.status(201).json({ topic });
+});
+
+// PUT /admin/quiz/topics/:id
+router.put('/quiz/topics/:id', async (req, res) => {
+  const topic = await QuizTopic.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  res.json({ topic });
+});
+
+// GET /admin/quiz/questions?topicId=xxx
+router.get('/quiz/questions', async (req, res) => {
+  const filter: any = {};
+  if (req.query.topicId) filter.topic = req.query.topicId;
+  const questions = await QuizQuestion.find(filter).populate('topic', 'name colorAccent');
+  res.json({ questions });
+});
+
+// POST /admin/quiz/questions
+router.post('/quiz/questions', async (req, res) => {
+  const question = await QuizQuestion.create(req.body);
+  res.status(201).json({ question });
+});
+
+// PUT /admin/quiz/questions/:id
+router.put('/quiz/questions/:id', async (req, res) => {
+  const question = await QuizQuestion.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  res.json({ question });
+});
+
+// DELETE /admin/quiz/questions/:id
+router.delete('/quiz/questions/:id', async (req, res) => {
+  await QuizQuestion.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
+});
+
+// GET /admin/quiz/events/:id/stats
+router.get('/quiz/events/:id/stats', async (req, res) => {
+  const attempts = await QuizAttempt.find({ quizEvent: req.params.id, status: 'completed' });
+  const totalPlayers = new Set(attempts.map(a => a.user.toString())).size;
+  const avgCorrect = attempts.length ? attempts.reduce((s, a) => s + a.totalCorrect, 0) / attempts.length : 0;
+  const totalCoinsDistributed = attempts.reduce((s, a) => s + a.coinsEarned, 0);
+  res.json({ totalPlayers, totalAttempts: attempts.length, avgCorrect: avgCorrect.toFixed(1), totalCoinsDistributed });
 });
 
 export default router;
