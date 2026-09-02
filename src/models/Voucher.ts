@@ -69,6 +69,6 @@ const VoucherSchema = new Schema<IVoucher>(
 
 // Index for user's vouchers and code lookup
 VoucherSchema.index({ user: 1, status: 1 });
-VoucherSchema.index({ code: 1 });
+
 
 export const Voucher = mongoose.model<IVoucher>('Voucher', VoucherSchema);
