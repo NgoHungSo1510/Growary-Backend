@@ -1,5 +1,5 @@
 import { User, BossEvent, BossRecord, Journal, Voucher } from '../models';
-import { processLevelUp } from '../routes/plans';
+import { processLevelUp } from './levelService';
 import { v4 as uuidv4 } from 'uuid';
 import { VOUCHER_EXPIRY_DAYS, getStartOfDay } from '../constants';
 
