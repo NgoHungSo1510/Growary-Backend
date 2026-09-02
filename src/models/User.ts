@@ -131,7 +131,5 @@ const UserSchema = new Schema<IUser>(
 );
 
 // Index for faster queries
-UserSchema.index({ email: 1 });
-UserSchema.index({ username: 1 });
 
 export const User = mongoose.model<IUser>('User', UserSchema);
