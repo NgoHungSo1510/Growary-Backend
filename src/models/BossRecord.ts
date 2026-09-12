@@ -6,6 +6,10 @@ export interface IBossRecord extends Document {
     totalDamageDealt: number; // XP contributed
     accumulatedCoins: number; // Coins earned during event for the chest
     pendingDamageAnimation: number; // Damage waiting to be animating on UI
+    attackPoints: number;
+    hasUnlockedStory: boolean;
+    lastMiniGameType?: string;
+    lastMiniGameResult?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -17,6 +21,10 @@ const BossRecordSchema = new Schema<IBossRecord>(
         totalDamageDealt: { type: Number, default: 0 },
         accumulatedCoins: { type: Number, default: 0 },
         pendingDamageAnimation: { type: Number, default: 0 },
+        attackPoints: { type: Number, default: 0 },
+        hasUnlockedStory: { type: Boolean, default: false },
+        lastMiniGameType: { type: String, default: null },
+        lastMiniGameResult: { type: String, default: null },
     },
     { timestamps: true }
 );

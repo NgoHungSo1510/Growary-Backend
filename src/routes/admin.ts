@@ -1,7 +1,9 @@
 import { Router, Response } from 'express';
-import { User, TaskTemplate, DailyPlan, Reward, Voucher, Event, Level, MilestoneReward, GachaItem, PenaltyConfig, NotificationConfig, CollectionTopic, CollectionEntry } from '../models';
+import { User, TaskTemplate, DailyPlan, Reward, Voucher, Event, Level, MilestoneReward, GachaItem, PenaltyConfig, NotificationConfig, CollectionTopic, CollectionEntry, SystemConfig } from '../models';
 import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
+import { BossCollection } from '../models/BossCollection';
+import { UserBossCollection } from '../models/UserBossCollection';
 import { authMiddleware, adminMiddleware, AuthRequest } from '../middleware/auth';
 import { processLevelUp } from '../services/levelService';
 import { escapeRegex } from '../constants';
@@ -809,6 +811,517 @@ router.get('/quiz/events/:id/stats', async (req, res) => {
   const avgCorrect = attempts.length ? attempts.reduce((s, a) => s + a.totalCorrect, 0) / attempts.length : 0;
   const totalCoinsDistributed = attempts.reduce((s, a) => s + a.coinsEarned, 0);
   res.json({ totalPlayers, totalAttempts: attempts.length, avgCorrect: avgCorrect.toFixed(1), totalCoinsDistributed });
+});
+
+// ==================== BOSS MANAGEMENT ====================
+
+router.get('/boss', async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const eventsDocs = await BossEvent.find().populate('collectionId', 'themeColor').sort({ startTime: 1 });
+        const events = eventsDocs.map(ev => {
+            const evObj = ev.toObject();
+            if (ev.collectionId && (ev.collectionId as any).themeColor) {
+                evObj.colorBg = (ev.collectionId as any).themeColor;
+            }
+            if (ev.collectionId && (ev.collectionId as any)._id) {
+                evObj.collectionId = (ev.collectionId as any)._id.toString();
+            }
+            return evObj;
+        });
+        res.json({ events });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.post('/boss', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const newBoss = new BossEvent(req.body);
+        await newBoss.save();
+        res.json({ event: newBoss });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.put('/boss/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const updated = await BossEvent.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        res.json({ event: updated });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.delete('/boss/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await BossEvent.findByIdAndDelete(req.params.id);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Helper
+function getWeekNumber(d: Date): number {
+    d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
+    var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+    var weekNo = Math.ceil(( ( (d.getTime() - yearStart.getTime()) / 86400000) + 1)/7);
+    return weekNo;
+}
+
+// History timeline
+router.get('/boss-weekly-history', async (req, res) => {
+    const bosses = await BossEvent.find({ weekActivatedAt: { $ne: null } })
+        .populate('collectionId', 'title iconEmoji')
+        .sort({ weekActivatedAt: -1 });
+
+    // Group theo tuần
+    const weekMap = new Map<string, any[]>();
+    for (const boss of bosses) {
+        const weekKey = boss.weekActivatedAt!.toISOString().slice(0, 10);
+        if (!weekMap.has(weekKey)) weekMap.set(weekKey, []);
+        weekMap.get(weekKey)!.push(boss);
+    }
+
+    const weeks = Array.from(weekMap.entries()).map(([weekStart, bosses]) => ({
+        weekStart,
+        weekLabel: `W${getWeekNumber(new Date(weekStart))}/${new Date(weekStart).getFullYear()}`,
+        bosses,
+    }));
+
+    res.json({ weeks });
+});
+
+// Pool status
+router.get('/boss-pool-status', async (req, res) => {
+    const [poolCount, activeCount, completedCount] = await Promise.all([
+        BossEvent.countDocuments({ status: 'pool' }),
+        BossEvent.countDocuments({ status: 'active' }),
+        BossEvent.countDocuments({ status: 'completed' }),
+    ]);
+    res.json({ poolCount, activeCount, completedCount, total: poolCount + activeCount + completedCount });
+});
+
+// Manual rotate (admin only)
+router.post('/boss-manual-rotate', async (req, res) => {
+    try {
+        const { performWeeklyRotation, getStartOfWeek } = await import('../services/bossService');
+        await performWeeklyRotation(getStartOfWeek());
+        await SystemConfig.findOneAndUpdate(
+            { key: 'lastBossRotation' },
+            { value: getStartOfWeek().toISOString() },
+            { upsert: true }
+        );
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Rotation failed' });
+    }
+});
+
+// Manual reroll preview (admin only)
+router.post('/boss-reroll-preview', async (req, res) => {
+    try {
+        const upcomingBosses = await BossEvent.find({ status: 'upcoming' });
+        for (const boss of upcomingBosses) {
+            boss.status = 'pool';
+            await boss.save();
+        }
+
+        const pool = await BossEvent.find({ status: 'pool' }).sort({ timesReturned: 1 });
+        if (pool.length > 0) {
+            const minReturns = pool[0].timesReturned;
+            const lowestTier = pool.filter(b => b.timesReturned === minReturns);
+            const shuffledTier = [...lowestTier].sort(() => Math.random() - 0.5);
+            const selected = [...shuffledTier];
+            if (selected.length < 2) {
+                const nextTier = pool.filter(b => b.timesReturned > minReturns).sort(() => Math.random() - 0.5);
+                selected.push(...nextTier.slice(0, 2 - selected.length));
+            }
+            const finalUpcoming = selected.slice(0, 2);
+            for (const boss of finalUpcoming) {
+                boss.status = 'upcoming';
+                await boss.save();
+            }
+        }
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Reroll preview failed' });
+    }
+});
+
+// ==================== BOSS COLLECTIONS ====================
+
+router.get('/boss-collections', async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const collections = await BossCollection.find().sort({ year: 1, month: 1 });
+        const result = await Promise.all(collections.map(async (col) => {
+            const bossCount = await BossEvent.countDocuments({ collectionId: col._id });
+            return { ...col.toObject(), bossCount };
+        }));
+        res.json({ collections: result });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.post('/boss-collections', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { title, description, month, year, iconEmoji, completionStory, bonusTickets } = req.body;
+        const collection = await BossCollection.create({ title, description, month, year, iconEmoji, completionStory, bonusTickets });
+        res.json({ collection });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.put('/boss-collections/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const collection = await BossCollection.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!collection) { res.status(404).json({ error: 'Not found' }); return; }
+        res.json({ collection });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.delete('/boss-collections/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await BossCollection.findByIdAndDelete(req.params.id);
+        await BossEvent.updateMany({ collectionId: req.params.id }, { $unset: { collectionId: 1 } });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Upload avatar: nhận URL đã upload lên Cloudinary
+router.post('/boss/:id/upload-avatar', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { avatarImageUrl } = req.body;
+        const boss = await BossEvent.findByIdAndUpdate(req.params.id, { avatarImageUrl }, { new: true });
+        if (!boss) { res.status(404).json({ error: 'Boss not found' }); return; }
+        res.json({ boss });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// ==================== COLLECTIONS ====================
+
+router.get('/collections', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const topics = await CollectionTopic.find().sort({ order: 1 });
+        res.json({ topics });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.post('/collections', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const newTopic = new CollectionTopic(req.body);
+        await newTopic.save();
+        res.json({ topic: newTopic });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.put('/collections/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const updated = await CollectionTopic.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        res.json({ topic: updated });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.delete('/collections/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await CollectionTopic.findByIdAndDelete(req.params.id);
+        await CollectionEntry.deleteMany({ topicId: req.params.id });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.get('/collections/:topicId/entries', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const entries = await CollectionEntry.find({ topicId: req.params.topicId }).populate('userId', 'username email avatar').sort({ slotIndex: 1 });
+        res.json({ entries });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.delete('/collections/entries/:entryId', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await CollectionEntry.findByIdAndDelete(req.params.entryId);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// ==================== VIP CONFIG ====================
+import { getVipTiersConfig } from '../utils/vipUtils';
+
+router.get('/vip-config', async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const tiers = await getVipTiersConfig();
+        res.json({ tiers });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch VIP config' });
+    }
+});
+
+router.put('/vip-config', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { tiers } = req.body;
+        const { SystemConfig } = await import('../models');
+        let config = await SystemConfig.findOne({ key: 'vip_tiers' });
+        if (!config) {
+            config = new SystemConfig({ key: 'vip_tiers', value: JSON.stringify(tiers) });
+        } else {
+            config.value = JSON.stringify(tiers);
+        }
+        await config.save();
+        res.json({ message: 'VIP config updated successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update VIP config' });
+    }
+});
+
+router.post('/vip-config/reset', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { userId, resetToTier } = req.body;
+        if (!userId) { res.status(400).json({ error: 'User ID is required' }); return; }
+        
+        const targetTier = typeof resetToTier === 'number' ? Math.max(0, Math.min(11, resetToTier)) : 0;
+        
+        const user = await User.findById(userId);
+        if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+        
+        // Plan: set vipTier = resetToTier, clear claimedVipTiers giữ lại [1..resetToTier]
+        // totalCoinsSpent KHÔNG reset (giữ lịch sử)
+        user.vipTier = targetTier;
+        user.claimedVipTiers = Array.from({ length: targetTier }, (_, i) => i + 1); // [1, 2, ..., targetTier]
+        user.monthlySpending = 0;
+        user.pendingCashback = 0;
+        // totalCoinsSpent: KHÔNG đụng — user leo lại sẽ nhận quà từ tier > targetTier
+        await user.save();
+        
+        res.json({ message: `User VIP reset to tier ${targetTier} successfully`, user });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to reset VIP' });
+    }
+});
+// ==================== MYSTERY BOX & INVENTORY ====================
+
+import { MysteryBox, UserInventory, SpecialItem } from '../models';
+
+// -------------------------------------------------------------
+// MYSTERY BOX & SPECIAL ITEMS V2.3
+// -------------------------------------------------------------
+
+router.put('/special-items/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+    const updated = await SpecialItem.findByIdAndUpdate(id, updateData, { new: true });
+    if (!updated) return res.status(404).json({ message: 'Không tìm thấy vật phẩm' });
+    res.json({ item: updated });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// ==================== SPECIAL ITEMS ====================
+
+router.get('/special-items', async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const items = await SpecialItem.find().sort({ createdAt: -1 });
+        res.json({ items });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch special items' });
+    }
+});
+
+router.post('/special-items', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const item = await SpecialItem.create(req.body);
+        res.status(201).json({ item });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create special item' });
+    }
+});
+
+router.put('/special-items/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const item = await SpecialItem.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!item) { res.status(404).json({ error: 'Item not found' }); return; }
+        res.json({ item });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update special item' });
+    }
+});
+
+router.delete('/special-items/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await SpecialItem.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Item deleted' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete special item' });
+    }
+});
+
+// ==================== MYSTERY BOXES ====================
+
+router.get('/mystery-boxes', async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const boxes = await MysteryBox.find().populate('rewards.specialItem').sort({ createdAt: -1 });
+        res.json({ boxes });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch mystery boxes' });
+    }
+});
+
+router.post('/mystery-boxes', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const box = await MysteryBox.create(req.body);
+        res.status(201).json({ box });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create mystery box' });
+    }
+});
+
+router.put('/mystery-boxes/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const box = await MysteryBox.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!box) { res.status(404).json({ error: 'Box not found' }); return; }
+        res.json({ box });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update mystery box' });
+    }
+});
+
+router.delete('/mystery-boxes/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await MysteryBox.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Box deleted' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete mystery box' });
+    }
+});
+
+router.delete('/special-items/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await SpecialItem.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Special Item deleted' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete special item' });
+    }
+});
+
+router.get('/mystery-boxes', async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const boxes = await MysteryBox.find().populate('rewards.specialItem').sort({ createdAt: -1 });
+        res.json({ boxes });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch mystery boxes' });
+    }
+});
+
+router.post('/mystery-boxes', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { rewards } = req.body;
+        const totalProb = rewards?.reduce((sum: number, r: any) => sum + r.probability, 0);
+        if (Math.abs(totalProb - 100) > 0.01) {
+            res.status(400).json({ error: 'Total probability must equal 100' }); return;
+        }
+
+        const box = await MysteryBox.create({ ...req.body, createdBy: req.userId });
+        const populatedBox = await MysteryBox.findById(box._id).populate('rewards.specialItem');
+        res.status(201).json({ box: populatedBox });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create mystery box' });
+    }
+});
+
+router.put('/mystery-boxes/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { rewards } = req.body;
+        if (rewards) {
+            const totalProb = rewards.reduce((sum: number, r: any) => sum + r.probability, 0);
+            if (Math.abs(totalProb - 100) > 0.01) {
+                res.status(400).json({ error: 'Total probability must equal 100' }); return;
+            }
+        }
+        
+        const box = await MysteryBox.findByIdAndUpdate(req.params.id, req.body, { new: true }).populate('rewards.specialItem');
+        if (!box) { res.status(404).json({ error: 'Box not found' }); return; }
+        res.json({ box });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update mystery box' });
+    }
+});
+
+router.delete('/mystery-boxes/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        await MysteryBox.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Mystery Box deleted' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete mystery box' });
+    }
+});
+
+router.get('/user-inventory/:userId', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const inventory = await UserInventory.findOne({ user: req.params.userId }).populate('items.specialItem items.mysteryBox');
+        res.json({ inventory: inventory ? inventory.items : [] });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch user inventory' });
+    }
+});
+
+router.post('/inventory/grant', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { userId, itemType, specialItem, mysteryBox, rewardForm, quantity, reason } = req.body;
+        if (!userId || !itemType || !quantity || quantity <= 0) {
+            res.status(400).json({ error: 'Invalid parameters' }); return;
+        }
+
+        let inventory = await UserInventory.findOne({ user: userId });
+        if (!inventory) {
+            inventory = new UserInventory({ user: userId, items: [] });
+        }
+
+        let itemIndex = -1;
+        if (itemType === 'special_item' && specialItem) {
+            itemIndex = inventory.items.findIndex(i => i.itemType === 'special_item' && i.specialItem?.toString() === specialItem && i.rewardForm === rewardForm);
+        } else if (itemType === 'mystery_box' && mysteryBox) {
+            itemIndex = inventory.items.findIndex(i => i.itemType === 'mystery_box' && i.mysteryBox?.toString() === mysteryBox);
+        }
+
+        if (itemIndex >= 0) {
+            inventory.items[itemIndex].quantity += quantity;
+            inventory.items[itemIndex].lastUpdated = new Date();
+        } else {
+            inventory.items.push({ itemType, specialItem, mysteryBox, rewardForm, quantity, lastUpdated: new Date() });
+        }
+
+        await inventory.save();
+
+        console.log(`Admin ${req.userId} granted ${quantity} ${itemType} to user ${userId}. Reason: ${reason}`);
+        
+        res.json({ message: 'Granted successfully', inventory });
+    } catch (error) {
+        console.error('Inventory grant error:', error);
+        res.status(500).json({ error: 'Failed to grant item' });
+    }
 });
 
 export default router;

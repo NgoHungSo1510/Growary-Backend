@@ -25,3 +25,21 @@ export const uploadProof = async (req: AuthRequest, res: Response): Promise<void
         res.status(500).json({ error: 'Failed to upload image' });
     }
 };
+
+export const uploadImage = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { image } = req.body;
+        if (!image) { res.status(400).json({ error: 'Image data is required' }); return; }
+
+        const result = await cloudinary.uploader.upload(image, {
+            folder: 'growary/characters',
+            resource_type: 'image',
+            transformation: [{ width: 400, height: 400, crop: 'limit', quality: 'auto' }],
+        });
+
+        res.json({ url: result.secure_url });
+    } catch (error: any) {
+        console.error('Upload failed:', error);
+        res.status(500).json({ error: 'Failed to upload image' });
+    }
+};

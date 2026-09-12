@@ -288,22 +288,23 @@ export const completeTask = async (req: AuthRequest, res: Response): Promise<voi
 
                     const activeBoss = await BossEvent.findOne({ status: 'active' });
                     if (activeBoss) {
-                        activeBoss.currentHp = Math.max(0, activeBoss.currentHp - finalXpReward);
-                        if (activeBoss.currentHp === 0) activeBoss.status = 'completed';
-                        await activeBoss.save();
-
-                        if (activeBoss.status === 'completed') {
-                            const { distributeBossRewards } = await import('../services/bossService');
-                            distributeBossRewards(activeBoss._id.toString()).catch(console.error);
-                        }
-
                         let userRecord = await BossRecord.findOne({ eventId: activeBoss._id, userId: req.userId });
                         if (!userRecord) {
-                            userRecord = new BossRecord({ eventId: activeBoss._id, userId: req.userId, totalDamageDealt: 0, accumulatedCoins: 0, pendingDamageAnimation: 0 });
+                            userRecord = new BossRecord({
+                                eventId: activeBoss._id,
+                                userId: req.userId,
+                                totalDamageDealt: 0,
+                                accumulatedCoins: 0,
+                                pendingDamageAnimation: 0,
+                                attackPoints: 0,
+                                hasUnlockedStory: false,
+                            });
                         }
-                        userRecord.totalDamageDealt += finalXpReward;
+                        // V2: Tích Điểm Công thay vì trừ HP
+                        userRecord.attackPoints += finalXpReward;
+                        // accumulatedCoins vẫn tích (Rương riêng, nhận 100% khi boss chết)
                         userRecord.accumulatedCoins += Math.floor(finalCoinReward / 2);
-                        userRecord.pendingDamageAnimation += finalXpReward;
+                        // pendingDamageAnimation không còn dùng trong V2
                         await userRecord.save();
                     }
                 }

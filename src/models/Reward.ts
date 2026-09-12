@@ -7,6 +7,7 @@ export interface IReward extends Document {
     pointCost: number;
     imageUrl?: string;
     stock?: number; // null = unlimited
+    shippingFee?: number;
     isActive: boolean;
     isFeatured: boolean;
     createdBy: mongoose.Types.ObjectId;
@@ -33,6 +34,11 @@ const RewardSchema = new Schema<IReward>(
         imageUrl: String,
         stock: {
             type: Number,
+            min: 0,
+        },
+        shippingFee: {
+            type: Number,
+            default: 15000,
             min: 0,
         },
         isActive: {

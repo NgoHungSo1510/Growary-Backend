@@ -15,12 +15,10 @@ export async function checkAndGrantMilestones(userId: string | mongoose.Types.Ob
 
     for (const m of milestones) {
         // Skip if already claimed
-        if (user.claimedMilestones.includes(m._id)) continue;
+        if (user.claimedMilestones.includes(m._id as any)) continue;
 
         let isMet = false;
         if (m.type === 'streak' && user.currentStreak >= m.target) {
-            isMet = true;
-        } else if (m.type === 'spending' && user.totalCoinsSpent >= m.target) {
             isMet = true;
         }
 

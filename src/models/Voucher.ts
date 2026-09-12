@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 export interface IVoucher extends Document {
     _id: mongoose.Types.ObjectId;
     user: mongoose.Types.ObjectId;
-    reward: mongoose.Types.ObjectId;
+    reward?: mongoose.Types.ObjectId;
     code: string; // Unique QR/voucher code
     pointCostSnapshot: number; // Points spent at purchase time
     rewardTitleSnapshot: string; // Reward title at purchase time
@@ -14,6 +14,9 @@ export interface IVoucher extends Document {
     usedAt?: Date;
     approvedBy?: mongoose.Types.ObjectId; // Admin who approved the use
     hasUnreadApproval?: boolean;
+    discountAmount?: number;
+    hasFreeShip?: boolean;
+    fragmentType?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -28,7 +31,7 @@ const VoucherSchema = new Schema<IVoucher>(
         reward: {
             type: Schema.Types.ObjectId,
             ref: 'Reward',
-            required: true,
+            required: false,
         },
         code: {
             type: String,
@@ -58,6 +61,17 @@ const VoucherSchema = new Schema<IVoucher>(
         hasUnreadApproval: {
             type: Boolean,
             default: false,
+        },
+        discountAmount: {
+            type: Number,
+            min: 0,
+        },
+        hasFreeShip: {
+            type: Boolean,
+            default: false,
+        },
+        fragmentType: {
+            type: String,
         },
         approvedBy: {
             type: Schema.Types.ObjectId,

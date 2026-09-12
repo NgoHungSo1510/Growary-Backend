@@ -40,6 +40,27 @@ export const authMiddleware = async (
         }
 
         req.user = user;
+
+        // Auto process monthly cashback
+        const currentMonthStr = new Date().toISOString().slice(0, 7); // YYYY-MM
+        const lastProcessed = user.lastCashbackProcessed ? user.lastCashbackProcessed.slice(0, 7) : '';
+        if (lastProcessed !== currentMonthStr) {
+            if (user.pendingCashback > 0) {
+                user.coins += user.pendingCashback;
+                const { Notification } = await import('../models');
+                await Notification.create({
+                    userId: user._id,
+                    title: 'Hoàn tiền VIP',
+                    message: `Bạn đã nhận được ${user.pendingCashback} coins từ chính sách hoàn tiền VIP tháng trước.`,
+                    type: 'system'
+                });
+            }
+            user.pendingCashback = 0;
+            user.monthlySpending = 0;
+            user.lastCashbackProcessed = new Date().toISOString();
+            await user.save();
+        }
+
         next();
     } catch (error) {
         res.status(401).json({ error: 'Invalid token' });

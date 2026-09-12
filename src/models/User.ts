@@ -30,6 +30,11 @@ export interface IUser extends Document {
         reason: 'missed' | 'late';
         createdAt: Date;
     }[];
+    vipTier: number;
+    claimedVipTiers: number[];
+    monthlySpending: number;
+    pendingCashback: number;
+    lastCashbackProcessed: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -125,7 +130,12 @@ const UserSchema = new Schema<IUser>(
                 reason: { type: String, enum: ['missed', 'late'], required: true },
                 createdAt: { type: Date, default: Date.now },
             }
-        ]
+        ],
+        vipTier: { type: Number, default: 0, min: 0, max: 11 },
+        claimedVipTiers: [{ type: Number }],
+        monthlySpending: { type: Number, default: 0, min: 0 },
+        pendingCashback: { type: Number, default: 0, min: 0 },
+        lastCashbackProcessed: { type: String, default: '' },
     },
     { timestamps: true }
 );
