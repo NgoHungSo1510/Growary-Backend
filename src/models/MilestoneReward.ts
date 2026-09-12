@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IMilestoneReward extends Document {
     _id: mongoose.Types.ObjectId;
-    type: 'streak' | 'spending';
+    type: 'streak';
     target: number;
     coins: number;
     gachaTickets: number;
@@ -15,7 +15,7 @@ const MilestoneRewardSchema = new Schema<IMilestoneReward>(
     {
         type: {
             type: String,
-            enum: ['streak', 'spending'],
+            enum: ['streak'],
             required: true,
         },
         target: {

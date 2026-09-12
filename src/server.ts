@@ -25,7 +25,8 @@ import gachaRoutes from './routes/gacha';
 import notificationRoutes from './routes/notifications';
 import collectionRoutes from './routes/collections';
 import quizRoutes from './routes/quiz';
-import { startStreakCronJob, startBossSchedulerJob } from './jobs/streak';
+import { startStreakCronJob, startBossSchedulerJob, startCollectionPenaltyJob } from './jobs/streak';
+import { startCashbackJob } from './jobs/cashbackJob';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -101,6 +102,8 @@ const startServer = async () => {
         await connectDB();
         startStreakCronJob();
         startBossSchedulerJob();
+        startCollectionPenaltyJob();
+        startCashbackJob();
 
         const server = app.listen(PORT as number, '0.0.0.0', () => {
             console.log(`🚀 Server running on port ${PORT} (0.0.0.0)`);

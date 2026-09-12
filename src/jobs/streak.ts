@@ -1,8 +1,7 @@
 import cron from 'node-cron';
 import { DailyPlan, User } from '../models';
-import { BossEvent } from '../models/BossEvent';
 import { STREAK_MIN_TASKS, BOSS_HEAL_AMOUNT, getStartOfDay } from '../constants';
-import { checkAndActivateBosses } from '../services/bossService';
+import { BossCollection, BossRecord, BossEvent } from '../models';
 
 export function startStreakCronJob() {
     // 17:00 UTC = 00:00 Vietnam time (UTC+7)
@@ -34,11 +33,11 @@ export function startStreakCronJob() {
                     await user.save();
                     console.log(`  ❌ ${user.username}: streak reset (${completedApproved}/${STREAK_MIN_TASKS})`);
 
-                    const activeBoss = await BossEvent.findOne({ status: 'active' });
-                    if (activeBoss) {
-                        activeBoss.currentHp = Math.min(activeBoss.maxHp, activeBoss.currentHp + BOSS_HEAL_AMOUNT);
-                        await activeBoss.save();
-                        console.log(`     👾 Boss healed +${BOSS_HEAL_AMOUNT} HP due to streak break.`);
+                    const activeBosses = await BossEvent.find({ status: 'active' });
+                    for (const boss of activeBosses) {
+                        boss.currentHp = Math.min(boss.maxHp, boss.currentHp + BOSS_HEAL_AMOUNT);
+                        await boss.save();
+                        console.log(`     👾 "${boss.title}" healed +${BOSS_HEAL_AMOUNT} HP`);
                     }
                 }
             }
@@ -53,15 +52,70 @@ export function startStreakCronJob() {
 }
 
 export function startBossSchedulerJob() {
-    // Run every minute to auto-switch boss status
-    cron.schedule('* * * * *', async () => {
+    // Thứ Hai 00:05 VN = 17:05 UTC — chỉ là backup, lazy eval là chính
+    cron.schedule('5 17 * * 1', async () => {
+        console.log('⏰ Weekly boss rotation cron (backup) triggered');
         try {
-            await checkAndActivateBosses();
+            const { checkWeeklyRotation } = await import('../services/bossService');
+            await checkWeeklyRotation();
         } catch (error) {
-            console.error('❌ Boss scheduler error:', error);
+            console.error('❌ Weekly rotation cron error:', error);
         }
     });
-
-    console.log('👾 Boss scheduler started (every minute)');
+    console.log('👾 Weekly boss rotation scheduled (Mon 00:05 VN — backup only)');
 }
 
+export function startCollectionPenaltyJob() {
+    // Chạy mỗi ngày lúc 01:00 VN = 18:00 UTC
+    cron.schedule('0 18 * * *', async () => {
+        console.log('Running collection penalty check...');
+        try {
+            const now = new Date();
+            // V2.1: Dùng weekActivatedAt thay vì endTime (đã bị xóa)
+            // Collection kết thúc khi tất cả boss đã hết tuần (weekActivatedAt + 7 ngày <= now)
+            const activeCollections = await BossCollection.find({ isActive: true });
+
+            for (const col of activeCollections) {
+                // Tổng số boss trong collection
+                const allBosses = await BossEvent.find({ collectionId: col._id });
+                if (allBosses.length === 0) continue;
+
+                // Kiểm tra xem toàn bộ boss đã hoàn thành (completed) hoặc đã qua tuần active
+                const allEnded = allBosses.every(boss => {
+                    if (boss.status === 'completed') return true;
+                    if (!boss.weekActivatedAt) return false;
+                    const weekEnd = new Date(boss.weekActivatedAt);
+                    weekEnd.setDate(weekEnd.getDate() + 7);
+                    return weekEnd <= now;
+                });
+
+                if (!allEnded) continue;
+
+                console.log(`Collection "${col.title}" ended. Applying 50% penalty to incomplete users.`);
+                col.isActive = false;
+                await col.save();
+
+                const bossIds = allBosses.map(b => b._id);
+
+                // Trừ 50% attackPoints của user chưa hoàn thành collection
+                const penalizedUsers = new Set<string>();
+                const records = await BossRecord.find({ eventId: { $in: bossIds }, attackPoints: { $gt: 0 } });
+
+                for (const record of records) {
+                    const uid = record.userId.toString();
+                    if (penalizedUsers.has(uid)) continue;
+                    penalizedUsers.add(uid);
+
+                    await BossRecord.updateMany(
+                        { userId: record.userId, attackPoints: { $gt: 0 } },
+                        [{ $set: { attackPoints: { $floor: { $divide: ['$attackPoints', 2] } } } }]
+                    );
+                }
+                console.log(`Penalized ${penalizedUsers.size} users.`);
+            }
+        } catch (error) {
+            console.error('Collection penalty error:', error);
+        }
+    });
+    console.log('Collection penalty job scheduled (daily at 01:00 VN)');
+}
