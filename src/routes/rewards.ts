@@ -89,7 +89,7 @@ router.get('/vip-status', authMiddleware, async (req: AuthRequest, res: Response
 // Purchase
 router.post('/:rewardId/purchase', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { couponType } = req.body || {};
+        const { couponType, couponTypes } = req.body || {};
         const reward = await Reward.findById(req.params.rewardId);
         if (!reward || !reward.isActive) { res.status(404).json({ error: 'Reward not found' }); return; }
 
@@ -98,7 +98,6 @@ router.post('/:rewardId/purchase', authMiddleware, async (req: AuthRequest, res:
         if (!currentUser) { res.status(404).json({ error: 'User not found' }); return; }
 
         const { calcCashback, calcVipTier, getRankUpGiftsConfig, getVipConfig } = await import('../utils/vipUtils');
-        const { couponType, couponTypes } = req.body || {};
         
         // Ensure shipping fee is handled
         const shippingFee = reward.shippingFee !== undefined ? reward.shippingFee : 15000;
