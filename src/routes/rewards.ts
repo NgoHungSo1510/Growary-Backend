@@ -110,37 +110,33 @@ router.post('/:rewardId/purchase', authMiddleware, async (req: AuthRequest, res:
         for (const cType of couponsToApply) {
             if (!cType) continue;
             
-            const inventoryItem = await UserInventory.findOne({
-                user: req.userId,
-                "items.itemType": cType,
-                "items.quantity": { $gt: 0 }
-            });
-
-            if (!inventoryItem) {
-                res.status(400).json({ error: `Invalid or missing coupon: ${cType}` });
+            const { SpecialItem } = await import('../models');
+            const spItem = await SpecialItem.findOne({ type: cType });
+            if (!spItem) {
+                res.status(400).json({ error: `Invalid coupon type: ${cType}` });
                 return;
             }
 
             // Check and deduct coupon from inventory
             const inventory = await UserInventory.findOneAndUpdate(
-                { user: req.userId, 'items.itemType': cType, 'items.quantity': { $gt: 0 } },
+                { user: req.userId, 'items.itemType': 'special_item', 'items.specialItem': spItem._id, 'items.quantity': { $gt: 0 } },
                 { $inc: { 'items.$.quantity': -1 } },
                 { new: true }
             );
 
             if (!inventory) {
-                res.status(400).json({ error: `Invalid or missing coupon: ${cType}` });
+                res.status(400).json({ error: `You do not have enough of coupon: ${cType}` });
                 return;
             }
             
-            if (cType === 'coupon_freeship') {
+            if (cType === 'coupon_freeship' || cType === 'freeship') {
                 appliedShippingDiscount = Math.max(appliedShippingDiscount, shippingFee);
             } else {
-                const shipMatch = cType.match(/^ship_(\d+)k$/);
+                const shipMatch = cType.match(/(?:coupon_)?ship_(\d+)k$/);
                 if (shipMatch) {
                     appliedShippingDiscount = Math.max(appliedShippingDiscount, parseInt(shipMatch[1], 10) * 1000);
                 } else {
-                    const discountMatch = cType.match(/^(?:discount|coupon)_(\d+)k$/);
+                    const discountMatch = cType.match(/(?:coupon_)?discount_(\d+)k$/);
                     if (discountMatch) {
                         appliedProductDiscount += parseInt(discountMatch[1], 10) * 1000;
                     }
