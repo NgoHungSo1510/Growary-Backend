@@ -262,6 +262,7 @@ router.get('/inventory', authMiddleware, async (req: AuthRequest, res: Response)
                     canExchange: item.rewardForm === 'fragment' && sp?.isFragmentable && item.quantity >= (sp?.requiredFragments || 999),
                     requiredFragments: sp?.requiredFragments,
                     type: sp?.type,
+                    specialItem: sp ? { _id: sp._id, type: sp.type, name: sp.name, imageUrl: sp.imageUrl, requiredFragments: sp.requiredFragments, value: sp.value } : undefined,
                     lastUpdated: item.lastUpdated
                 };
             }
