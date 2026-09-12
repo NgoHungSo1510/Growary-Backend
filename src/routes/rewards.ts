@@ -98,46 +98,61 @@ router.post('/:rewardId/purchase', authMiddleware, async (req: AuthRequest, res:
         if (!currentUser) { res.status(404).json({ error: 'User not found' }); return; }
 
         const { calcCashback, calcVipTier, getRankUpGiftsConfig, getVipConfig } = await import('../utils/vipUtils');
+        const { couponType, couponTypes } = req.body || {};
         
+        // Ensure shipping fee is handled
         const shippingFee = reward.shippingFee !== undefined ? reward.shippingFee : 15000;
-        let basePriceWithShipping = reward.pointCost + shippingFee;
-        let actualPrice = basePriceWithShipping;
-
+        let actualPrice = reward.pointCost + shippingFee;
         let appliedShippingDiscount = 0;
         let appliedProductDiscount = 0;
 
-        if (couponType) {
+        const couponsToApply = couponTypes || (couponType ? [couponType] : []);
+        
+        for (const cType of couponsToApply) {
+            if (!cType) continue;
+            
+            const inventoryItem = await UserInventory.findOne({
+                user: req.userId,
+                "items.itemType": cType,
+                "items.quantity": { $gt: 0 }
+            });
+
+            if (!inventoryItem) {
+                res.status(400).json({ error: `Invalid or missing coupon: ${cType}` });
+                return;
+            }
+
             // Check and deduct coupon from inventory
             const inventory = await UserInventory.findOneAndUpdate(
-                { user: req.userId, 'items.itemType': couponType, 'items.quantity': { $gt: 0 } },
+                { user: req.userId, 'items.itemType': cType, 'items.quantity': { $gt: 0 } },
                 { $inc: { 'items.$.quantity': -1 } },
                 { new: true }
             );
 
             if (!inventory) {
-                res.status(400).json({ error: 'Invalid or missing coupon' });
+                res.status(400).json({ error: `Invalid or missing coupon: ${cType}` });
                 return;
             }
             
-            if (couponType === 'coupon_freeship') {
-                appliedShippingDiscount = shippingFee;
+            if (cType === 'coupon_freeship') {
+                appliedShippingDiscount = Math.max(appliedShippingDiscount, shippingFee);
             } else {
-                const shipMatch = couponType.match(/^ship_(\d+)k$/);
+                const shipMatch = cType.match(/^ship_(\d+)k$/);
                 if (shipMatch) {
-                    appliedShippingDiscount = parseInt(shipMatch[1], 10) * 1000;
+                    appliedShippingDiscount = Math.max(appliedShippingDiscount, parseInt(shipMatch[1], 10) * 1000);
                 } else {
-                    const discountMatch = couponType.match(/^(?:discount|coupon)_(\d+)k$/);
+                    const discountMatch = cType.match(/^(?:discount|coupon)_(\d+)k$/);
                     if (discountMatch) {
-                        appliedProductDiscount = parseInt(discountMatch[1], 10) * 1000;
+                        appliedProductDiscount += parseInt(discountMatch[1], 10) * 1000;
                     }
                 }
             }
-            
-            // Prevent discounts from making cost negative.
-            const discountedShipping = Math.max(0, shippingFee - appliedShippingDiscount);
-            const discountedProduct = Math.max(0, reward.pointCost - appliedProductDiscount);
-            actualPrice = discountedProduct + discountedShipping;
         }
+        
+        // Prevent discounts from making cost negative.
+        const discountedShipping = Math.max(0, shippingFee - appliedShippingDiscount);
+        const discountedProduct = Math.max(0, reward.pointCost - appliedProductDiscount);
+        actualPrice = discountedProduct + discountedShipping;
 
         // Atomic stock decrement
         if (reward.stock !== undefined && reward.stock !== null) {
