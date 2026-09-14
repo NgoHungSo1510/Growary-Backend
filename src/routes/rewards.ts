@@ -160,9 +160,9 @@ router.post('/:rewardId/purchase', authMiddleware, async (req: AuthRequest, res:
             if (updatedReward.stock !== undefined && updatedReward.stock <= 0) { updatedReward.isActive = false; await updatedReward.save(); }
         }
 
-        // Atomic coin deduction — guard cả coins và currentPoints
+        // Atomic coin deduction — chỉ guard coins, không guard currentPoints
         const user = await User.findOneAndUpdate(
-            { _id: req.userId, coins: { $gte: actualPrice }, currentPoints: { $gte: 0 } },
+            { _id: req.userId, coins: { $gte: actualPrice } },
             { 
                 $inc: { 
                     coins: -actualPrice, 

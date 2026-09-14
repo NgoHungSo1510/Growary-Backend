@@ -191,13 +191,20 @@ export const checkWeeklyRotation = async (): Promise<void> => {
 };
 
 export const performWeeklyRotation = async (weekStart: Date): Promise<void> => {
-    // BƯỚC 1: Kết thúc 2 boss đang active
+    // BƯỚC 1: Kết thúc 2 boss đang active — chuyển tất cả về pool
     const activeBosses = await BossEvent.find({ status: 'active' });
 
     for (const boss of activeBosses) {
         if (boss.currentHp <= 0) {
-            console.log(`  ✅ "${boss.title}" was completed this week.`);
+            // Boss đã bị tiêu diệt tuần này → về pool, reset HP
+            boss.status = 'pool';
+            boss.currentHp = boss.maxHp;
+            boss.isRewardDistributed = false;
+            boss.weekActivatedAt = undefined;
+            await boss.save();
+            console.log(`  ✅ "${boss.title}" was completed — reset to pool.`);
         } else {
+            // Boss chưa bị tiêu diệt → về pool, tăng timesReturned
             boss.status = 'pool';
             boss.currentHp = boss.maxHp;
             boss.timesReturned = (boss.timesReturned || 0) + 1;
@@ -208,7 +215,7 @@ export const performWeeklyRotation = async (weekStart: Date): Promise<void> => {
         }
     }
 
-    // Helper: bốc N boss từ pool
+    // Helper: bốc N boss từ pool (loại trừ boss đang upcoming)
     const pickFromPool = async (count: number) => {
         if (count <= 0) return [];
         const pool = await BossEvent.find({ status: 'pool' }).sort({ timesReturned: 1 });
@@ -248,7 +255,7 @@ export const performWeeklyRotation = async (weekStart: Date): Promise<void> => {
         }
     }
 
-    // BƯỚC 3: Bốc 2 boss mới thành upcoming cho tuần sau
+    // BƯỚC 3: Bốc 2 boss mới thành upcoming cho tuần sau (chỉ pick từ 'pool')
     const newUpcoming = await pickFromPool(2);
     for (const boss of newUpcoming) {
         boss.status = 'upcoming';
