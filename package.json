@@ -1,6 +1,6 @@
 {
   "name": "growary-backend",
-  "version": "1.0.0",
+  "version": "2.3.1",
   "description": "Growary App - Task Management & Rewards Backend API",
   "main": "dist/server.js",
   "scripts": {

@@ -1,4 +1,4 @@
-import { User, BossEvent, BossRecord, Journal, Voucher, SystemConfig } from '../models';
+import { User, BossEvent, BossRecord, Journal, Voucher, SystemConfig, UserInventory } from '../models';
 import { BossCollection, UserBossCollection } from '../models';
 import { processLevelUp } from './levelService';
 import { v4 as uuidv4 } from 'uuid';
@@ -73,6 +73,25 @@ export const distributeBossRewards = async (bossId: string) => {
                         if (rw.stock <= 0) rw.isActive = false;
                         await rw.save();
                     }
+                }
+            }
+            
+            // Distribute special items (e.g. Mystery Boxes)
+            if (boss.mysteryBoxRewards && boss.mysteryBoxRewards.length > 0) {
+                for (const mbId of boss.mysteryBoxRewards) {
+                    await UserInventory.findOneAndUpdate(
+                        { user: user._id, 'items.itemType': 'mystery_box', 'items.mysteryBox': mbId },
+                        { $inc: { 'items.$.quantity': 1 } },
+                        { new: true }
+                    ).then(async (updated) => {
+                        if (!updated) {
+                            await UserInventory.findOneAndUpdate(
+                                { user: user._id },
+                                { $push: { items: { itemType: 'mystery_box', mysteryBox: mbId, quantity: 1 } } },
+                                { upsert: true, new: true }
+                            );
+                        }
+                    });
                 }
             }
 
