@@ -120,12 +120,23 @@ export const attackBoss = async (req: AuthRequest, res: Response): Promise<void>
         }
         await activeBoss.save();
 
-        // Cập nhật BossRecord user
-        userRecord.attackPoints = (userRecord.attackPoints - pointsToUse) + refundPoints;
+        // Cập nhật BossRecord user (cho Boss hiện tại)
+        const netSpent = pointsToUse - refundPoints;
+        userRecord.attackPoints = userRecord.attackPoints - netSpent;
         userRecord.totalDamageDealt += actualDamage;
         userRecord.lastMiniGameType = miniGameType;
         userRecord.lastMiniGameResult = actualMiniGameResult;
         await userRecord.save();
+
+        // Đồng bộ điểm bị trừ cho tất cả các BossRecord active khác (Kho điểm dùng chung)
+        const allActiveBosses = await BossEvent.find({ status: 'active', _id: { $ne: activeBoss._id } });
+        if (allActiveBosses.length > 0) {
+            const otherBossIds = allActiveBosses.map(b => b._id);
+            await BossRecord.updateMany(
+                { eventId: { $in: otherBossIds }, userId: req.userId },
+                { $set: { attackPoints: userRecord.attackPoints } }
+            );
+        }
 
         // Nếu boss chết → chia thưởng
         if (activeBoss.status === 'completed') {

@@ -12,6 +12,7 @@ export interface IBossEvent extends Document {
     baseRewardXp: number;
     gachaTickets: number;
     rewardItems: mongoose.Types.ObjectId[];
+    mysteryBoxRewards?: mongoose.Types.ObjectId[];
     status: 'pool' | 'active' | 'completed' | 'upcoming';
     isRewardDistributed: boolean;
     colorBg?: string;
@@ -48,6 +49,12 @@ const BossEventSchema = new Schema<IBossEvent>(
             {
                 type: Schema.Types.ObjectId,
                 ref: 'Reward',
+            }
+        ],
+        mysteryBoxRewards: [
+            {
+                type: Schema.Types.ObjectId,
+                ref: 'MysteryBox',
             }
         ],
         status: {

@@ -16,8 +16,8 @@ export const getRewards = async (req: AuthRequest, res: Response): Promise<void>
 
 export const createReward = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { title, description, pointCost, imageUrl, stock } = req.body;
-        const reward = await Reward.create({ title, description, pointCost, imageUrl, stock, createdBy: req.userId });
+        const { title, description, pointCost, imageUrl, stock, shippingFee } = req.body;
+        const reward = await Reward.create({ title, description, pointCost, imageUrl, stock, shippingFee, createdBy: req.userId });
         res.status(201).json({ reward });
     } catch (error) {
         res.status(500).json({ error: 'Failed to create reward' });
@@ -27,10 +27,10 @@ export const createReward = async (req: AuthRequest, res: Response): Promise<voi
 export const updateReward = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         // Whitelist allowed fields — prevent mass assignment
-        const { title, description, pointCost, imageUrl, stock, isActive } = req.body;
+        const { title, description, pointCost, imageUrl, stock, isActive, shippingFee } = req.body;
         const reward = await Reward.findByIdAndUpdate(
             req.params.id,
-            { title, description, pointCost, imageUrl, stock, isActive },
+            { title, description, pointCost, imageUrl, stock, isActive, shippingFee },
             { new: true, runValidators: true }
         );
         if (!reward) { res.status(404).json({ error: 'Reward not found' }); return; }

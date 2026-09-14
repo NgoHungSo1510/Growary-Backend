@@ -286,26 +286,42 @@ export const completeTask = async (req: AuthRequest, res: Response): Promise<voi
                         grantedRewards.items.push(...mlRewards.items);
                     }
 
-                    const activeBoss = await BossEvent.findOne({ status: 'active' });
-                    if (activeBoss) {
-                        let userRecord = await BossRecord.findOne({ eventId: activeBoss._id, userId: req.userId });
-                        if (!userRecord) {
-                            userRecord = new BossRecord({
-                                eventId: activeBoss._id,
-                                userId: req.userId,
-                                totalDamageDealt: 0,
-                                accumulatedCoins: 0,
-                                pendingDamageAnimation: 0,
-                                attackPoints: 0,
-                                hasUnlockedStory: false,
-                            });
+                    const activeBosses = await BossEvent.find({ status: 'active' });
+                    if (activeBosses.length > 0) {
+                        let maxAttackPoints = 0;
+                        let maxAccumulatedCoins = 0;
+                        const userRecords = [];
+
+                        // 1. Lấy tất cả BossRecord và tìm giá trị lớn nhất (để đồng bộ nếu có Record mới tạo)
+                        for (const boss of activeBosses) {
+                            let userRecord = await BossRecord.findOne({ eventId: boss._id, userId: req.userId });
+                            if (userRecord) {
+                                if (userRecord.attackPoints > maxAttackPoints) maxAttackPoints = userRecord.attackPoints;
+                                if (userRecord.accumulatedCoins > maxAccumulatedCoins) maxAccumulatedCoins = userRecord.accumulatedCoins;
+                                userRecords.push(userRecord);
+                            } else {
+                                userRecord = new BossRecord({
+                                    eventId: boss._id,
+                                    userId: req.userId,
+                                    totalDamageDealt: 0,
+                                    accumulatedCoins: 0,
+                                    pendingDamageAnimation: 0,
+                                    attackPoints: 0,
+                                    hasUnlockedStory: false,
+                                });
+                                userRecords.push(userRecord);
+                            }
                         }
-                        // V2: Tích Điểm Công thay vì trừ HP
-                        userRecord.attackPoints += finalXpReward;
-                        // accumulatedCoins vẫn tích (Rương riêng, nhận 100% khi boss chết)
-                        userRecord.accumulatedCoins += Math.floor(finalCoinReward / 2);
-                        // pendingDamageAnimation không còn dùng trong V2
-                        await userRecord.save();
+
+                        // 2. Đồng bộ và cộng điểm thưởng chung cho TẤT CẢ boss
+                        const newAttackPoints = maxAttackPoints + finalXpReward;
+                        const newCoins = maxAccumulatedCoins + Math.floor(finalCoinReward / 2);
+
+                        for (const record of userRecords) {
+                            record.attackPoints = newAttackPoints;
+                            record.accumulatedCoins = newCoins;
+                            await record.save();
+                        }
                     }
                 }
 

@@ -107,12 +107,21 @@ router.post('/:rewardId/purchase', authMiddleware, async (req: AuthRequest, res:
 
         const couponsToApply = couponTypes || (couponType ? [couponType] : []);
         
+        const deductedCoupons: any[] = [];
+        
         for (const cType of couponsToApply) {
             if (!cType) continue;
             
             const { SpecialItem } = await import('../models');
             const spItem = await SpecialItem.findOne({ type: cType });
             if (!spItem) {
+                // rollback whatever we deducted so far
+                for (const d of deductedCoupons) {
+                    await UserInventory.findOneAndUpdate(
+                        { user: req.userId, 'items.itemType': 'special_item', 'items.specialItem': d._id },
+                        { $inc: { 'items.$.quantity': 1 } }
+                    );
+                }
                 res.status(400).json({ error: `Invalid coupon type: ${cType}` });
                 return;
             }
@@ -125,10 +134,18 @@ router.post('/:rewardId/purchase', authMiddleware, async (req: AuthRequest, res:
             );
 
             if (!inventory) {
+                for (const d of deductedCoupons) {
+                    await UserInventory.findOneAndUpdate(
+                        { user: req.userId, 'items.itemType': 'special_item', 'items.specialItem': d._id },
+                        { $inc: { 'items.$.quantity': 1 } }
+                    );
+                }
                 res.status(400).json({ error: `You do not have enough of coupon: ${cType}` });
                 return;
             }
             
+            deductedCoupons.push(spItem);
+
             if (cType === 'coupon_freeship' || cType === 'freeship') {
                 appliedShippingDiscount = Math.max(appliedShippingDiscount, shippingFee);
             } else {
@@ -179,6 +196,13 @@ router.post('/:rewardId/purchase', authMiddleware, async (req: AuthRequest, res:
             // Rollback stock
             if (reward.stock !== undefined && reward.stock !== null) {
                 await Reward.findByIdAndUpdate(reward._id, { $inc: { stock: 1 }, isActive: true });
+            }
+            // Rollback coupons
+            for (const spItem of deductedCoupons) {
+                await UserInventory.findOneAndUpdate(
+                    { user: req.userId, 'items.itemType': 'special_item', 'items.specialItem': spItem._id },
+                    { $inc: { 'items.$.quantity': 1 } }
+                );
             }
             res.status(400).json({ error: 'Not enough coins' }); return;
         }
