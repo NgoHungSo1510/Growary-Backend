@@ -4,6 +4,7 @@ import authRoutes from '../routes/auth';
 import rewardRoutes from '../routes/rewards';
 import planRoutes from '../routes/plans';
 import shopEventRoutes from '../routes/shopEvents';
+import warehouseRoutes from '../routes/warehouse';
 
 export const createTestApp = () => {
     const app = express();
@@ -12,6 +13,7 @@ export const createTestApp = () => {
     app.use('/api/rewards', rewardRoutes);
     app.use('/api/plans', planRoutes);
     app.use('/api/shop-events', shopEventRoutes);
+    app.use('/api/warehouse', warehouseRoutes);
     app.use(errorHandler);
     return app;
 };
