@@ -1,8 +1,5 @@
 import { Response } from 'express';
-import { DailyPlan, User, Journal, PenaltyConfig } from '../models';
-import { BossEvent } from '../models/BossEvent';
-import { BossRecord } from '../models/BossRecord';
-import { TaskTemplate } from '../models';
+import { DailyPlan, User, Journal, PenaltyConfig, TaskTemplate, Voucher, BossEvent, BossRecord } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { getMandatoryTasks, buildCarryoverTasks } from '../services/planService';
 import { processLevelUp } from '../services/levelService';
@@ -10,7 +7,6 @@ import { checkAndGrantMilestones } from '../utils/milestones';
 import { calculatePenaltyAdjustedReward } from '../utils/penalty';
 import { STREAK_MIN_TASKS, VOUCHER_EXPIRY_DAYS, getStartOfDay } from '../constants';
 import { GrantedRewards } from '../types';
-import { Voucher } from '../models';
 import { v4 as uuidv4 } from 'uuid';
 
 export const getPenaltyConfig = async (req: AuthRequest, res: Response): Promise<void> => {

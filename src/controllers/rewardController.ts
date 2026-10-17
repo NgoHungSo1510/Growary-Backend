@@ -1,11 +1,12 @@
 import { Response } from 'express';
-import { Reward, Voucher, User } from '../models';
+import { Reward, Voucher } from '../models';
 import { AuthRequest } from '../middleware/auth';
-import { v4 as uuidv4 } from 'uuid';
-import { checkAndGrantMilestones } from '../utils/milestones';
-import { VOUCHER_EXPIRY_DAYS } from '../constants';
+import * as vipService from '../services/vipService';
+import * as rewardService from '../services/rewardService';
 
-export const getRewards = async (req: AuthRequest, res: Response): Promise<void> => {
+// ==================== SHOP REWARDS CRUD ====================
+
+export const getRewards = async (_req: AuthRequest, res: Response): Promise<void> => {
     try {
         const rewards = await Reward.find({ isActive: true }).sort({ pointCost: 1 });
         res.json({ rewards });
@@ -26,7 +27,6 @@ export const createReward = async (req: AuthRequest, res: Response): Promise<voi
 
 export const updateReward = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        // Whitelist allowed fields — prevent mass assignment
         const { title, description, pointCost, imageUrl, stock, isActive, shippingFee } = req.body;
         const reward = await Reward.findByIdAndUpdate(
             req.params.id,
@@ -49,48 +49,98 @@ export const deleteReward = async (req: AuthRequest, res: Response): Promise<voi
     }
 };
 
+// ==================== VIP STATUS ====================
+
+export const getVipStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.userId) {
+            res.status(401).json({ error: 'Unauthorized' });
+            return;
+        }
+        const data = await vipService.getUserVipStatus(req.userId);
+        res.json(data);
+    } catch (error: any) {
+        res.status(error.message === 'User not found' ? 404 : 500).json({ error: error.message || 'Failed to fetch VIP status' });
+    }
+};
+
+// ==================== REWARD PURCHASE ====================
+
 export const purchaseReward = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { rewardId } = req.params;
-        const reward = await Reward.findById(rewardId);
-
-        if (!reward || !reward.isActive) { res.status(404).json({ error: 'Reward not found' }); return; }
-        if (reward.stock !== undefined && reward.stock <= 0) { res.status(400).json({ error: 'Reward out of stock' }); return; }
-
-        const user = await User.findById(req.userId);
-        if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-        if (user.currentPoints < reward.pointCost) { res.status(400).json({ error: 'Insufficient points' }); return; }
-
-        user.currentPoints -= reward.pointCost;
-        user.totalCoinsSpent += reward.pointCost;
-
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + VOUCHER_EXPIRY_DAYS);
-
-        const voucher = await Voucher.create({
-            user: req.userId,
-            reward: reward._id,
-            code: `GRW-${uuidv4().slice(0, 8).toUpperCase()}`,
-            pointCostSnapshot: reward.pointCost,
-            rewardTitleSnapshot: reward.title,
-            expiresAt,
-        });
-
-        if (reward.stock !== undefined) {
-            reward.stock -= 1;
-            if (reward.stock <= 0) reward.isActive = false;
-            await reward.save();
+        if (!req.userId) {
+            res.status(401).json({ error: 'Unauthorized' });
+            return;
         }
-
-        const milestoneRewards = await checkAndGrantMilestones(user._id);
-        await user.save();
-
-        res.json({ voucher, milestoneRewards, remainingPoints: user.currentPoints });
-    } catch (error) {
-        console.error('Purchase reward error:', error);
+        const { couponType, couponTypes } = req.body || {};
+        const result = await rewardService.purchaseRewardItem(req.userId, req.params.rewardId, { couponType, couponTypes });
+        res.status(201).json(result);
+    } catch (error: any) {
+        const clientErrors = [
+            'Reward not found or inactive',
+            'User not found',
+            'Reward out of stock',
+            'Not enough coins'
+        ];
+        if (clientErrors.includes(error.message) || error.message.startsWith('Invalid coupon') || error.message.startsWith('You do not have enough')) {
+            res.status(400).json({ error: error.message });
+            return;
+        }
+        console.error('Purchase error:', error);
         res.status(500).json({ error: 'Failed to purchase reward' });
     }
 };
+
+// ==================== INVENTORY & MYSTERY BOX ====================
+
+export const getInventory = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.userId) { res.status(401).json({ error: 'Unauthorized' }); return; }
+        const inventory = await rewardService.getUserInventoryItems(req.userId);
+        res.json({ inventory });
+    } catch (error) {
+        console.error('Inventory fetch error:', error);
+        res.status(500).json({ error: 'Failed to fetch inventory' });
+    }
+};
+
+export const openBox = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.userId) { res.status(401).json({ error: 'Unauthorized' }); return; }
+        const { boxId } = req.body;
+        if (!boxId) { res.status(400).json({ error: 'Box ID is required' }); return; }
+        const reward = await rewardService.openMysteryBox(req.userId, boxId);
+        res.json({ message: 'Box opened', reward });
+    } catch (error: any) {
+        res.status(400).json({ error: error.message || 'Failed to open box' });
+    }
+};
+
+export const exchangeFragment = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.userId) { res.status(401).json({ error: 'Unauthorized' }); return; }
+        const { specialItemId } = req.body;
+        if (!specialItemId) { res.status(400).json({ error: 'Special Item ID is required' }); return; }
+        const result = await rewardService.exchangeItemFragment(req.userId, specialItemId);
+        res.json(result);
+    } catch (error: any) {
+        res.status(400).json({ error: error.message || 'Failed to exchange fragment' });
+    }
+};
+
+export const useItem = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.userId) { res.status(401).json({ error: 'Unauthorized' }); return; }
+        const { specialItemId } = req.body;
+        if (!specialItemId) { res.status(400).json({ error: 'Special Item ID is required' }); return; }
+        const result = await rewardService.useSpecialItem(req.userId, specialItemId);
+        res.json(result);
+    } catch (error: any) {
+        res.status(400).json({ error: error.message || 'Failed to use item' });
+    }
+};
+
+// ==================== VOUCHERS ====================
 
 export const getMyVouchers = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
@@ -98,6 +148,27 @@ export const getMyVouchers = async (req: AuthRequest, res: Response): Promise<vo
         res.json({ vouchers });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch vouchers' });
+    }
+};
+
+export const getUnreadVouchers = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const vouchers = await Voucher.find({ user: req.userId, isRead: false }).populate('reward');
+        res.json({ vouchers });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch unread vouchers' });
+    }
+};
+
+export const getPendingVouchers = async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const vouchers = await Voucher.find({ status: 'pending_use' })
+            .populate('user', 'username email')
+            .populate('reward')
+            .sort({ updatedAt: -1 });
+        res.json({ vouchers });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch pending vouchers' });
     }
 };
 
@@ -118,15 +189,6 @@ export const useVoucher = async (req: AuthRequest, res: Response): Promise<void>
     }
 };
 
-export const getUnreadVouchers = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        const vouchers = await Voucher.find({ user: req.userId, isRead: false }).populate('reward');
-        res.json({ vouchers });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch unread vouchers' });
-    }
-};
-
 export const markVoucherRead = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const voucher = await Voucher.findOneAndUpdate(
@@ -138,5 +200,22 @@ export const markVoucherRead = async (req: AuthRequest, res: Response): Promise<
         res.json({ voucher });
     } catch (error) {
         res.status(500).json({ error: 'Failed to mark voucher as read' });
+    }
+};
+
+export const confirmVoucher = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const voucher = await Voucher.findOne({ code: req.params.code, status: { $in: ['active', 'pending_use'] } });
+        if (!voucher) { res.status(404).json({ error: 'Voucher not found or already used' }); return; }
+
+        voucher.status = 'used';
+        voucher.usedAt = new Date();
+        voucher.approvedBy = req.user?._id;
+        voucher.hasUnreadApproval = true;
+        await voucher.save();
+
+        res.json({ voucher, message: 'Voucher confirmed as used' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to confirm voucher' });
     }
 };

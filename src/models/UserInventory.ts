@@ -25,7 +25,7 @@ const InventoryItemSchema = new Schema<IInventoryItem>({
 }, { _id: false });
 
 const UserInventorySchema = new Schema<IUserInventory>({
-    user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     items: [InventoryItemSchema],
 }, { timestamps: true });
 

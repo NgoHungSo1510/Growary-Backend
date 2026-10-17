@@ -4,6 +4,7 @@ export class AppError extends Error {
     constructor(
         public statusCode: number,
         message: string,
+        public code?: string,
         public isOperational = true
     ) {
         super(message);
@@ -13,8 +14,8 @@ export class AppError extends Error {
 }
 
 export const errorHandler = (
-    err: Error | AppError,
-    req: Request,
+    err: any,
+    _req: Request,
     res: Response,
     _next: NextFunction
 ): void => {
@@ -23,6 +24,7 @@ export const errorHandler = (
     if (err instanceof AppError) {
         res.status(err.statusCode).json({
             error: err.message,
+            ...(err.code && { code: err.code }),
             ...(isDev && { stack: err.stack }),
         });
         return;
@@ -30,7 +32,11 @@ export const errorHandler = (
 
     // Mongoose validation error
     if (err.name === 'ValidationError') {
-        res.status(400).json({ error: err.message });
+        const messages = Object.values(err.errors || {}).map((e: any) => e.message);
+        res.status(400).json({
+            error: 'Validation failed',
+            details: messages.length ? messages : err.message
+        });
         return;
     }
 
@@ -47,7 +53,7 @@ export const errorHandler = (
     }
 
     if (err.name === 'TokenExpiredError') {
-        res.status(401).json({ error: 'Token expired' });
+        res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
         return;
     }
 
