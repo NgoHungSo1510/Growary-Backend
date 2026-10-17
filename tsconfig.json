@@ -6,7 +6,10 @@
             "ES2020"
         ],
         "outDir": "./dist",
-        "rootDir": "./src",
+        "rootDirs": [
+            "./src",
+            "../shared/types"
+        ],
         "strict": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
@@ -14,8 +17,12 @@
         "resolveJsonModule": true,
         "declaration": true,
         "declarationMap": true,
-        "sourceMap": true,
-        "moduleResolution": "node"
+        "moduleResolution": "node",
+        "baseUrl": ".",
+        "paths": {
+            "@shared/*": ["../shared/types/*"],
+            "@shared": ["../shared/types/index.ts"]
+        }
     },
     "include": [
         "src/**/*"

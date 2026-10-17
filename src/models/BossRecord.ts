@@ -31,5 +31,7 @@ const BossRecordSchema = new Schema<IBossRecord>(
 
 // Unique compound index: One user can only have one record per event
 BossRecordSchema.index({ userId: 1, eventId: 1 }, { unique: true });
+// Index for event leaderboard sorting
+BossRecordSchema.index({ eventId: 1, totalDamageDealt: -1 });
 
 export const BossRecord = mongoose.model<IBossRecord>('BossRecord', BossRecordSchema);

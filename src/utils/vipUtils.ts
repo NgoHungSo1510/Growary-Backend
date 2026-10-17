@@ -36,6 +36,10 @@ const DEFAULT_RANK_UP_GIFTS: Record<number, { coins: number; gachaTickets: numbe
   11: { coins: 40000, gachaTickets: 10 },
 };
 
+/**
+ * Lấy cấu hình các hạng VIP (VIP tiers) từ cơ sở dữ liệu SystemConfig hoặc trả về mặc định.
+ * @returns Mảng cấu hình các hạng VIP đã được chuẩn hóa
+ */
 export async function getVipTiersConfig(): Promise<VipTierConfig[]> {
   const { SystemConfig } = await import('../models');
   const config = await SystemConfig.findOne({ key: 'vip_tiers' });
@@ -58,6 +62,10 @@ export async function getVipTiersConfig(): Promise<VipTierConfig[]> {
   return DEFAULT_VIP_TIERS;
 }
 
+/**
+ * Lấy cấu hình phần quà thăng hạng VIP (coins và vé gacha) từ SystemConfig.
+ * @returns Bản đồ mốc VIP tier tương ứng với số coin và vé gacha nhận được
+ */
 export async function getRankUpGiftsConfig(): Promise<Record<number, { coins: number; gachaTickets: number }>> {
   const { SystemConfig } = await import('../models');
   const config = await SystemConfig.findOne({ key: 'rank_up_gifts' });
@@ -69,6 +77,11 @@ export async function getRankUpGiftsConfig(): Promise<Record<number, { coins: nu
   return DEFAULT_RANK_UP_GIFTS;
 }
 
+/**
+ * Tính toán thứ hạng VIP hiện tại dựa trên tổng chi tiêu tích lũy.
+ * @param totalCoinsSpent - Tổng số coins người dùng đã tiêu dùng từ trước đến nay
+ * @returns Cấp độ VIP tier tương ứng (0 đến 11)
+ */
 export async function calcVipTier(totalCoinsSpent: number): Promise<number> {
   const tiers = await getVipTiersConfig();
   for (let i = tiers.length - 1; i >= 0; i--) {
@@ -79,13 +92,23 @@ export async function calcVipTier(totalCoinsSpent: number): Promise<number> {
   return 0;
 }
 
+/**
+ * Lấy thông tin chi tiết cấu hình của một hạng VIP cụ thể.
+ * @param tier - Thứ hạng VIP cần tra cứu
+ * @returns Thông tin chi tiết về tên hạng, tỷ lệ hoàn tiền và màu sắc đại diện
+ */
 export async function getVipConfig(tier: number): Promise<VipTierConfig> {
   const tiers = await getVipTiersConfig();
   const validTier = Math.max(0, Math.min(tiers.length - 1, tier));
   return tiers[validTier];
 }
 
-
+/**
+ * Tính toán số lượng Coin hoàn tiền (Cashback) nhận được từ một giao dịch.
+ * @param actualPrice - Giá trị thực tế của vật phẩm sau khi áp dụng chiết khấu
+ * @param tier - Thứ hạng VIP của người mua
+ * @returns Số coin được hoàn lại vào ví chờ (pendingCashback)
+ */
 export async function calcCashback(actualPrice: number, tier: number): Promise<number> {
   const config = await getVipConfig(tier);
   return Math.floor(actualPrice * config.cashbackPercent / 100);
