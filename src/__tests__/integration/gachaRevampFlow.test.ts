@@ -27,6 +27,8 @@ jest.mock('../../services/gachaRevampService', () => ({
     getOrCreateCurrentWeeklyEvent: jest.fn(),
     getWeeklyLeaderboard: jest.fn(),
     getHallOfFame: jest.fn(),
+    getCurrentUserLeaderboardEntry: jest.fn(),
+    getCommunityAchievements: jest.fn().mockResolvedValue([]),
     getCurrentWeekRange: jest.fn().mockReturnValue({
         weekStart: '2026-10-12',
         weekEnd: '2026-10-18',

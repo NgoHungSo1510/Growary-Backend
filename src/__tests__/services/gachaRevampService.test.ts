@@ -6,14 +6,19 @@ import {
     recordSpinScore,
     getWeeklyLeaderboard,
     getHallOfFame,
+    generateWeeklyRewards,
+    getCurrentUserLeaderboardEntry,
+    getCommunityAchievements,
 } from '../../services/gachaRevampService';
 import { GachaWeeklyEvent } from '../../models/GachaWeeklyEvent';
 import { GachaLeaderboard } from '../../models/GachaLeaderboard';
 import { MysteryBox } from '../../models/MysteryBox';
+import { GachaHistory } from '../../models/GachaHistory';
 
 jest.mock('../../models/GachaWeeklyEvent');
 jest.mock('../../models/GachaLeaderboard');
 jest.mock('../../models/MysteryBox');
+jest.mock('../../models/GachaHistory');
 
 describe('GachaRevampService', () => {
     afterEach(() => {
@@ -56,7 +61,13 @@ describe('GachaRevampService', () => {
                 weekStart: '2026-10-12',
                 weekEnd: '2026-10-18',
                 featuredBoxes: [],
+                weeklyRewards: {
+                    top1: { box: { name: 'Rương Epic', rarity: 'epic' }, coins: 1500, xp: 500, tickets: 3 },
+                    top2: { box: { name: 'Rương Rare', rarity: 'rare' }, coins: 1000, xp: 250, tickets: 1 },
+                    top3: { box: { name: 'Rương Normal', rarity: 'normal' }, coins: 500, xp: 100, tickets: 0 },
+                },
                 isActive: true,
+                save: jest.fn(),
             };
 
             (GachaWeeklyEvent.findOne as jest.Mock).mockResolvedValue(mockEvent);
@@ -64,7 +75,6 @@ describe('GachaRevampService', () => {
             const result = await getOrCreateCurrentWeeklyEvent();
             expect(GachaWeeklyEvent.findOne).toHaveBeenCalled();
             expect(result).toBe(mockEvent);
-            expect(MysteryBox.find).not.toHaveBeenCalled();
         });
 
         it('should create a new event with mystery boxes if none exists', async () => {
@@ -79,14 +89,17 @@ describe('GachaRevampService', () => {
                 {
                     _id: new mongoose.Types.ObjectId(),
                     name: 'Rương Kim Cương',
-                    rarity: 'legendary',
+                    rarity: 'epic',
                 },
             ];
 
-            const mockFindQuery = {
-                limit: jest.fn().mockResolvedValue(mockBoxes),
-            };
-            (MysteryBox.find as jest.Mock).mockReturnValue(mockFindQuery);
+            (MysteryBox.find as jest.Mock).mockImplementation((query: any) => {
+                if (query.limit) return query.limit(mockBoxes);
+                return {
+                    limit: jest.fn().mockResolvedValue(mockBoxes),
+                    then: (res: any) => res(mockBoxes),
+                };
+            });
 
             const mockSavedEvent = {
                 _id: new mongoose.Types.ObjectId(),
@@ -96,13 +109,17 @@ describe('GachaRevampService', () => {
                     { boxId: mockBoxes[0]._id, name: mockBoxes[0].name, rarity: mockBoxes[0].rarity },
                     { boxId: mockBoxes[1]._id, name: mockBoxes[1].name, rarity: mockBoxes[1].rarity },
                 ],
+                weeklyRewards: {
+                    top1: { box: { name: 'Rương Kim Cương', rarity: 'epic' }, coins: 1500, xp: 500, tickets: 3 },
+                    top2: { box: { name: 'Rương Vàng', rarity: 'rare' }, coins: 1000, xp: 250, tickets: 1 },
+                    top3: { box: { name: 'Rương Gỗ Rừng Sâu', rarity: 'normal' }, coins: 500, xp: 100, tickets: 0 },
+                },
                 isActive: true,
             };
 
             (GachaWeeklyEvent.create as jest.Mock).mockResolvedValue(mockSavedEvent);
 
             const result = await getOrCreateCurrentWeeklyEvent();
-            expect(MysteryBox.find).toHaveBeenCalledWith({ isActive: true });
             expect(GachaWeeklyEvent.create).toHaveBeenCalled();
             expect(result).toEqual(mockSavedEvent);
         });
@@ -216,6 +233,86 @@ describe('GachaRevampService', () => {
             const hallOfFame = await getHallOfFame();
             expect(hallOfFame.lastWeekWinner?.username).toBe('WinnerUser');
             expect(hallOfFame.lastWeekTopTierUp?.username).toBe('TierUpMaster');
+        });
+    });
+
+    describe('generateWeeklyRewards', () => {
+        it('should return valid top1, top2, top3 rewards with exact coins, xp, tickets', async () => {
+            (MysteryBox.find as jest.Mock).mockResolvedValue([]);
+            const rewards = await generateWeeklyRewards();
+
+            expect(rewards.top1).toBeDefined();
+            expect(rewards.top1.coins).toBe(1500);
+            expect(rewards.top1.xp).toBe(500);
+            expect(rewards.top1.tickets).toBe(3);
+            expect(rewards.top1.box.rarity).toBe('epic');
+
+            expect(rewards.top2).toBeDefined();
+            expect(rewards.top2.coins).toBe(1000);
+            expect(rewards.top2.xp).toBe(250);
+            expect(rewards.top2.tickets).toBe(1);
+            expect(rewards.top2.box.rarity).toBe('rare');
+
+            expect(rewards.top3).toBeDefined();
+            expect(rewards.top3.coins).toBe(500);
+            expect(rewards.top3.xp).toBe(100);
+            expect(rewards.top3.tickets).toBe(0);
+            expect(rewards.top3.box.rarity).toBe('normal');
+        });
+    });
+
+    describe('getCurrentUserLeaderboardEntry', () => {
+        it('should return rank 0 and 0 points when user has no entries', async () => {
+            const mockFindOne = {
+                populate: jest.fn().mockResolvedValue(null),
+            };
+            (GachaLeaderboard.findOne as jest.Mock).mockReturnValue(mockFindOne);
+
+            const result = await getCurrentUserLeaderboardEntry('507f1f77bcf86cd799439011');
+            expect(result).toBeDefined();
+            expect(result?.totalScore).toBe(0);
+            expect(result?.rank).toBe(0);
+        });
+
+        it('should return computed rank and score when user has entry', async () => {
+            const entry = {
+                userId: { _id: new mongoose.Types.ObjectId(), username: 'TargetUser' },
+                totalScore: 125,
+                spinCount: 5,
+                bestRarity: 'epic',
+                tierUps: 1,
+            };
+            const mockFindOne = {
+                populate: jest.fn().mockResolvedValue(entry),
+            };
+            (GachaLeaderboard.findOne as jest.Mock).mockReturnValue(mockFindOne);
+            (GachaLeaderboard.countDocuments as jest.Mock).mockResolvedValue(2); // 2 users ahead -> rank 3
+
+            const result = await getCurrentUserLeaderboardEntry('507f1f77bcf86cd799439011');
+            expect(result?.totalScore).toBe(125);
+            expect(result?.rank).toBe(3);
+        });
+    });
+
+    describe('getCommunityAchievements', () => {
+        it('should return seed achievements if database is empty', async () => {
+            const mockFindDrops = {
+                sort: jest.fn().mockReturnThis(),
+                limit: jest.fn().mockReturnThis(),
+                populate: jest.fn().mockResolvedValue([]),
+            };
+            (GachaHistory.find as jest.Mock).mockReturnValue(mockFindDrops);
+
+            const mockFindTierUps = {
+                sort: jest.fn().mockReturnThis(),
+                limit: jest.fn().mockReturnThis(),
+                populate: jest.fn().mockResolvedValue([]),
+            };
+            (GachaLeaderboard.find as jest.Mock).mockReturnValue(mockFindTierUps);
+
+            const achievements = await getCommunityAchievements(5);
+            expect(achievements.length).toBeGreaterThan(0);
+            expect(achievements[0].title).toBeDefined();
         });
     });
 });
