@@ -25,6 +25,7 @@ import gachaRoutes from './routes/gacha';
 import notificationRoutes from './routes/notifications';
 import collectionRoutes from './routes/collections';
 import quizRoutes from './routes/quiz';
+import shopEventRoutes from './routes/shopEvents';
 import { startStreakCronJob, startBossSchedulerJob, startCollectionPenaltyJob } from './jobs/streak';
 import { startCashbackJob } from './jobs/cashbackJob';
 
@@ -87,6 +88,7 @@ app.use('/api/gacha', gachaRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/collections', collectionRoutes);
 app.use('/api/quiz', quizRoutes);
+app.use('/api/shop-events', shopEventRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────
 app.use((_req, res) => {
