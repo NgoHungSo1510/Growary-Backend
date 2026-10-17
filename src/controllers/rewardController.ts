@@ -9,7 +9,9 @@ import * as rewardService from '../services/rewardService';
 export const getRewards = async (_req: AuthRequest, res: Response): Promise<void> => {
     try {
         const rewards = await Reward.find({ isActive: true }).sort({ pointCost: 1 });
-        res.json({ rewards });
+        const { getActiveFlashSale } = await import('../services/shopEventService');
+        const activeEvent = await getActiveFlashSale();
+        res.json({ rewards, activeEvent: activeEvent || null });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch rewards' });
     }
