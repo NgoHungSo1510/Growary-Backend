@@ -30,6 +30,7 @@ import warehouseRoutes from './routes/warehouse';
 import { startStreakCronJob, startBossSchedulerJob, startCollectionPenaltyJob } from './jobs/streak';
 import { startCashbackJob } from './jobs/cashbackJob';
 import { startShopEventCronJob } from './jobs/shopEventJob';
+import { startGachaWeeklyCronJob } from './jobs/gachaWeeklyJob';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -110,6 +111,7 @@ const startServer = async () => {
         startCollectionPenaltyJob();
         startCashbackJob();
         startShopEventCronJob();
+        startGachaWeeklyCronJob();
 
         const server = app.listen(PORT as number, '0.0.0.0', () => {
             console.log(`🚀 Server running on port ${PORT} (0.0.0.0)`);

@@ -32,6 +32,8 @@ export interface IGachaWeeklyEvent extends Document {
     featuredBoxes: IFeaturedBox[];
     weeklyRewards?: IWeeklyRewards;
     isActive: boolean;
+    isDistributed?: boolean;
+    distributedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -104,6 +106,13 @@ const GachaWeeklyEventSchema = new Schema<IGachaWeeklyEvent>(
         isActive: {
             type: Boolean,
             default: true,
+        },
+        isDistributed: {
+            type: Boolean,
+            default: false,
+        },
+        distributedAt: {
+            type: Date,
         },
     },
     { timestamps: true }
