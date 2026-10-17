@@ -28,6 +28,7 @@ import quizRoutes from './routes/quiz';
 import shopEventRoutes from './routes/shopEvents';
 import { startStreakCronJob, startBossSchedulerJob, startCollectionPenaltyJob } from './jobs/streak';
 import { startCashbackJob } from './jobs/cashbackJob';
+import { startShopEventCronJob } from './jobs/shopEventJob';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -106,6 +107,7 @@ const startServer = async () => {
         startBossSchedulerJob();
         startCollectionPenaltyJob();
         startCashbackJob();
+        startShopEventCronJob();
 
         const server = app.listen(PORT as number, '0.0.0.0', () => {
             console.log(`🚀 Server running on port ${PORT} (0.0.0.0)`);
