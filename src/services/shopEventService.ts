@@ -1,6 +1,5 @@
-import { ShopEvent, IShopEvent } from '../models/ShopEvent';
+import { ShopEvent, IShopEvent, Notification } from '../models';
 import { CreateShopEventDto } from '@shared';
-import { Notification } from '../models/Notification';
 
 export const MERCHANT_MESSAGES = [
     {

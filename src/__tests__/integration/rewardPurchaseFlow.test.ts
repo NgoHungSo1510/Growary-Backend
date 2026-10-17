@@ -23,6 +23,9 @@ jest.mock('../../models', () => ({
     SpecialItem: {
         findOne: jest.fn(),
     },
+    ShopEvent: {
+        findOne: jest.fn().mockResolvedValue(null),
+    },
     SystemConfig: {
         findOne: jest.fn().mockResolvedValue(null),
     },
