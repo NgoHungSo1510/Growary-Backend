@@ -6,12 +6,31 @@ export interface IFeaturedBox {
     rarity: string;
 }
 
+export interface IWeeklyRewardTier {
+    box: {
+        boxId?: mongoose.Types.ObjectId;
+        name: string;
+        rarity: string;
+        color?: string;
+    };
+    coins: number;
+    xp: number;
+    tickets: number;
+}
+
+export interface IWeeklyRewards {
+    top1: IWeeklyRewardTier;
+    top2: IWeeklyRewardTier;
+    top3: IWeeklyRewardTier;
+}
+
 export interface IGachaWeeklyEvent extends Document {
     _id: mongoose.Types.ObjectId;
     weekStart: string; // ISO date format "YYYY-MM-DD"
     weekEnd: string;   // ISO date format "YYYY-MM-DD"
     featuredItems: mongoose.Types.ObjectId[];
     featuredBoxes: IFeaturedBox[];
+    weeklyRewards?: IWeeklyRewards;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
@@ -36,6 +55,30 @@ const FeaturedBoxSchema = new Schema<IFeaturedBox>(
     { _id: false }
 );
 
+const WeeklyRewardTierSchema = new Schema<IWeeklyRewardTier>(
+    {
+        box: {
+            boxId: { type: Schema.Types.ObjectId, ref: 'MysteryBox' },
+            name: { type: String, required: true },
+            rarity: { type: String, required: true },
+            color: { type: String },
+        },
+        coins: { type: Number, required: true },
+        xp: { type: Number, required: true },
+        tickets: { type: Number, required: true },
+    },
+    { _id: false }
+);
+
+const WeeklyRewardsSchema = new Schema<IWeeklyRewards>(
+    {
+        top1: { type: WeeklyRewardTierSchema, required: true },
+        top2: { type: WeeklyRewardTierSchema, required: true },
+        top3: { type: WeeklyRewardTierSchema, required: true },
+    },
+    { _id: false }
+);
+
 const GachaWeeklyEventSchema = new Schema<IGachaWeeklyEvent>(
     {
         weekStart: {
@@ -55,6 +98,9 @@ const GachaWeeklyEventSchema = new Schema<IGachaWeeklyEvent>(
             },
         ],
         featuredBoxes: [FeaturedBoxSchema],
+        weeklyRewards: {
+            type: WeeklyRewardsSchema,
+        },
         isActive: {
             type: Boolean,
             default: true,

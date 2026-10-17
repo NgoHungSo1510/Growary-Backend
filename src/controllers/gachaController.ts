@@ -80,8 +80,12 @@ export const getLeaderboard = async (
         const weekRange = gachaRevampService.getCurrentWeekRange();
         const topUsers = await gachaRevampService.getWeeklyLeaderboard(weekStart, limit);
         const hallOfFame = await gachaRevampService.getHallOfFame();
+        const communityAchievements = await gachaRevampService.getCommunityAchievements(limit);
 
-        const currentUser = topUsers.find((u) => u.userId === req.userId);
+        let currentUser = topUsers.find((u) => u.userId === req.userId);
+        if (!currentUser && req.userId) {
+            currentUser = await gachaRevampService.getCurrentUserLeaderboardEntry(req.userId, weekStart);
+        }
 
         res.json({
             currentWeek: {
@@ -91,6 +95,7 @@ export const getLeaderboard = async (
                 currentUser,
             },
             hallOfFame,
+            communityAchievements,
         });
     } catch (error) {
         next(error);
