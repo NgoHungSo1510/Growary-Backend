@@ -29,3 +29,5 @@ export { MysteryBox, IMysteryBox, IMysteryBoxReward } from './MysteryBox';
 export { default as SpecialItem, ISpecialItem } from './SpecialItem';
 export { ShopEvent, IShopEvent } from './ShopEvent';
 export { SpecialItemConfig, ISpecialItemConfig } from './SpecialItemConfig';
+export { GachaWeeklyEvent, IGachaWeeklyEvent, IFeaturedBox } from './GachaWeeklyEvent';
+export { GachaLeaderboard, IGachaLeaderboard, LeaderboardRarity } from './GachaLeaderboard';
