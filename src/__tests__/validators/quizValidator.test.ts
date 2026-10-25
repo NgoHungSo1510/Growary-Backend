@@ -1,4 +1,10 @@
-import { submitQuizAnswerSchema, completeQuizSchema } from '../../validators/quizValidator';
+import {
+    submitQuizAnswerSchema,
+    completeQuizSchema,
+    createQuizEventSchema,
+    createQuizQuestionSchema,
+} from '../../validators/quizValidator';
+
 
 describe('Quiz Validator Layer', () => {
     describe('submitQuizAnswerSchema', () => {
@@ -101,4 +107,65 @@ describe('Quiz Validator Layer', () => {
             expect(result.success).toBe(false);
         });
     });
+
+    describe('createQuizEventSchema', () => {
+        const validPayload = {
+            title: 'Sự kiện Tri Thức Đấu Trí',
+            description: 'Kiểm tra kiến thức',
+            startTime: '2026-10-25T10:00',
+            endTime: '2026-10-25T22:00',
+            rewardPerCorrect: 50,
+            maxAttemptsPerUser: 5,
+            attemptCooldownHours: 24,
+            questionsPerAttempt: 5,
+            colorBg: '#1E293B',
+            colorIcon: '#38BDF8',
+            iconName: 'quiz',
+        };
+
+        it('accepts datetime-local string (Bug B8 fix)', () => {
+            const result = createQuizEventSchema.safeParse(validPayload);
+            expect(result.success).toBe(true);
+            if (result.success) {
+                expect(result.data.startTime).toBeInstanceOf(Date);
+                expect(result.data.endTime).toBeInstanceOf(Date);
+            }
+        });
+
+        it('rejects endTime before startTime', () => {
+            const result = createQuizEventSchema.safeParse({
+                ...validPayload,
+                startTime: '2026-10-25T20:00',
+                endTime: '2026-10-25T10:00',
+            });
+            expect(result.success).toBe(false);
+        });
+    });
+
+    describe('createQuizQuestionSchema', () => {
+        const validTopicId = '507f1f77bcf86cd799439011';
+
+        it('rejects 3 options', () => {
+            const result = createQuizQuestionSchema.safeParse({
+                topic: validTopicId,
+                question: 'Thủ đô của Việt Nam là gì?',
+                options: ['Hà Nội', 'Đà Nẵng', 'TP.HCM'],
+                correctIndex: 0,
+                difficulty: 'easy',
+            });
+            expect(result.success).toBe(false);
+        });
+
+        it('rejects duplicate options', () => {
+            const result = createQuizQuestionSchema.safeParse({
+                topic: validTopicId,
+                question: 'Thủ đô của Việt Nam là gì?',
+                options: ['Hà Nội', 'Hà Nội', 'Đà Nẵng', 'TP.HCM'],
+                correctIndex: 0,
+                difficulty: 'easy',
+            });
+            expect(result.success).toBe(false);
+        });
+    });
 });
+
