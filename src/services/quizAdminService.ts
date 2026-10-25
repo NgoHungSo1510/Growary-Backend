@@ -86,7 +86,7 @@ export async function listQuizTopicsWithCounts(): Promise<QuizTopicAdminDTO[]> {
                 questionCount: { $sum: 1 },
             },
         },
-    ])) as Array<{ _id: any; questionCount: number }>;
+    ])) as Array<{ _id: { toString(): string }; questionCount: number }>;
 
     const countMap = new Map<string, number>();
     for (const item of countAgg) {

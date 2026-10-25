@@ -227,8 +227,9 @@ export async function startOrResumeQuizAttempt(
             })),
             status: 'in_progress',
         });
-    } catch (err: any) {
-        if (err.code === 11000) {
+    } catch (err: unknown) {
+        const mongoErr = err as { code?: number };
+        if (mongoErr && mongoErr.code === 11000) {
             const raced = await QuizAttempt.findOne({
                 user: userId,
                 quizEvent: event._id,
