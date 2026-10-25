@@ -22,6 +22,11 @@ jest.mock('../../services/quizService', () => ({
     getUserQuizHistory: jest.fn(),
 }));
 
+jest.mock('../../services/quizLeaderboardService', () => ({
+    getQuizLeaderboard: jest.fn(),
+}));
+
+
 describe('Integration Flow: Quiz API', () => {
     const app = createTestApp();
     const testSecret = getJwtSecret();
@@ -114,4 +119,33 @@ describe('Integration Flow: Quiz API', () => {
             expect(res.body.perfectBonus).toBeTruthy();
         });
     });
+
+    describe('GET /api/quiz/leaderboard', () => {
+        it('rejects invalid eventId query (400)', async () => {
+            const res = await request(app)
+                .get('/api/quiz/leaderboard?eventId=invalid-id')
+                .set('Authorization', `Bearer ${validToken}`);
+
+            expect(res.status).toBe(400);
+            expect(res.body.error).toBe('Query validation failed');
+        });
+
+        it('returns 200 with leaderboard data on valid request', async () => {
+            const { getQuizLeaderboard } = require('../../services/quizLeaderboardService');
+            (getQuizLeaderboard as jest.Mock).mockResolvedValue({
+                eventId: validObjectId,
+                entries: [],
+                currentUser: null,
+            });
+
+            const res = await request(app)
+                .get(`/api/quiz/leaderboard?eventId=${validObjectId}`)
+                .set('Authorization', `Bearer ${validToken}`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.eventId).toBe(validObjectId);
+            expect(res.body.entries).toEqual([]);
+        });
+    });
 });
+

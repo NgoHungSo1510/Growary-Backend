@@ -2,6 +2,8 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import * as quizService from '../services/quizService';
+import { getQuizLeaderboard } from '../services/quizLeaderboardService';
+
 
 /**
  * GET /api/quiz/active
@@ -113,3 +115,23 @@ export const getQuizHistory = async (
         next(error);
     }
 };
+
+/**
+ * GET /api/quiz/leaderboard
+ * Returns event leaderboard with competition rankings
+ */
+export const getLeaderboard = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        if (!req.userId) throw new AppError(401, 'Unauthorized');
+        const eventId = (req.query.eventId as string) || null;
+        const leaderboard = await getQuizLeaderboard(eventId, req.userId);
+        res.json(leaderboard);
+    } catch (error) {
+        next(error);
+    }
+};
+

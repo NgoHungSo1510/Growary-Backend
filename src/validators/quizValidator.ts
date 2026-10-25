@@ -32,3 +32,14 @@ export const completeQuizSchema = z.object({
         .string({ message: 'attemptId là bắt buộc' })
         .regex(objectIdRegex, 'attemptId không hợp lệ'),
 });
+
+/**
+ * Zod validation schema for querying quiz leaderboard
+ */
+export const quizLeaderboardQuerySchema = z.object({
+    eventId: z
+        .string()
+        .regex(objectIdRegex, 'eventId phải là MongoDB ObjectId')
+        .optional(),
+});
+

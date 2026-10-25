@@ -25,36 +25,8 @@ import {
     summarizeAttempt,
     ScoredAnswer,
 } from '../utils/quizScoring';
-import { buildSessionDTO } from './quizSessionHelper';
+import { buildSessionDTO, buildCompleteResult } from './quizSessionHelper';
 
-/**
- * Formats a QuizCompleteResult from attempt data and calculated summary.
- */
-function buildCompleteResult(
-    attempt: IQuizAttempt,
-    summary: ReturnType<typeof summarizeAttempt>,
-    levelUps: number[],
-    alreadyCompleted: boolean
-): QuizCompleteResult {
-    return {
-        totalCorrect: summary.totalCorrect,
-        totalQuestions: attempt.answers.length,
-        baseCoins: summary.baseCoins,
-        speedBonusCoins: summary.speedBonusCoins,
-        streakBonusCoins: summary.streakBonusCoins,
-        coinsEarned: summary.coinsEarned,
-        xpEarned: summary.xpEarned,
-        maxStreak: attempt.maxStreak,
-        speedAnswerCount: summary.speedAnswerCount,
-        score: summary.score,
-        perfectBonus: summary.isPerfect
-            ? { tickets: 1, message: 'HOÀN HẢO! Nhận thêm 1 Vé Gacha!' }
-            : null,
-        levelUps,
-        endReason: (attempt.endReason as QuizAttemptEndReason) ?? 'finished',
-        alreadyCompleted,
-    };
-}
 
 /**
  * Gets currently active quiz event after transitioning statuses.
