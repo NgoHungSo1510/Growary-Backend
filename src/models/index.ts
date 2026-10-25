@@ -27,3 +27,7 @@ export { SystemConfig, ISystemConfig } from './SystemConfig';
 export { UserInventory, IUserInventory, IInventoryItem } from './UserInventory';
 export { MysteryBox, IMysteryBox, IMysteryBoxReward } from './MysteryBox';
 export { default as SpecialItem, ISpecialItem } from './SpecialItem';
+export { ShopEvent, IShopEvent } from './ShopEvent';
+export { SpecialItemConfig, ISpecialItemConfig } from './SpecialItemConfig';
+export { GachaWeeklyEvent, IGachaWeeklyEvent, IFeaturedBox, IWeeklyRewards, IWeeklyRewardTier } from './GachaWeeklyEvent';
+export { GachaLeaderboard, IGachaLeaderboard, LeaderboardRarity } from './GachaLeaderboard';

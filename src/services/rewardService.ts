@@ -93,8 +93,18 @@ export const purchaseRewardItem = async (
         }
     }
 
+    // Apply Flash Sale discount if active
+    const { getActiveFlashSale, calculateDiscountedPrice } = await import('./shopEventService');
+    const activeFlashSale = await getActiveFlashSale();
+    const effectiveBasePrice = calculateDiscountedPrice(
+        reward.pointCost,
+        currentUser.vipTier || 0,
+        activeFlashSale,
+        reward._id.toString()
+    );
+
     const discountedShipping = Math.max(0, shippingFee - appliedShippingDiscount);
-    const discountedProduct = Math.max(0, reward.pointCost - appliedProductDiscount);
+    const discountedProduct = Math.max(0, effectiveBasePrice - appliedProductDiscount);
     const actualPrice = discountedProduct + discountedShipping;
 
     // Atomic stock decrement
@@ -187,12 +197,24 @@ export const getUserInventoryItems = async (userId: string) => {
     return items.map(item => {
         if (item.itemType === 'mystery_box') {
             const box = item.mysteryBox as any;
+            const rarity = box?.rarity || 'normal';
+            const color =
+                rarity === 'legend' || rarity === 'legendary'
+                    ? '#F59E0B'
+                    : rarity === 'epic'
+                    ? '#A855F7'
+                    : rarity === 'rare'
+                    ? '#3B82F6'
+                    : '#94A3B8';
+
             return {
-                id: box?._id,
+                id: box?._id?.toString(),
+                boxId: box?._id?.toString(),
                 itemType: 'mystery_box',
                 quantity: item.quantity,
-                displayName: box?.name || 'Mystery Box',
-                color: box?.rarity === 'legendary' ? '#FFD700' : '#FFFFFF',
+                displayName: box?.name || 'Hộp Quà Bí Ẩn',
+                rarity,
+                color,
                 canExchange: false,
                 lastUpdated: item.lastUpdated
             };

@@ -25,8 +25,12 @@ import gachaRoutes from './routes/gacha';
 import notificationRoutes from './routes/notifications';
 import collectionRoutes from './routes/collections';
 import quizRoutes from './routes/quiz';
+import shopEventRoutes from './routes/shopEvents';
+import warehouseRoutes from './routes/warehouse';
 import { startStreakCronJob, startBossSchedulerJob, startCollectionPenaltyJob } from './jobs/streak';
 import { startCashbackJob } from './jobs/cashbackJob';
+import { startShopEventCronJob } from './jobs/shopEventJob';
+import { startGachaWeeklyCronJob } from './jobs/gachaWeeklyJob';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -87,6 +91,8 @@ app.use('/api/gacha', gachaRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/collections', collectionRoutes);
 app.use('/api/quiz', quizRoutes);
+app.use('/api/shop-events', shopEventRoutes);
+app.use('/api/warehouse', warehouseRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────
 app.use((_req, res) => {
@@ -104,6 +110,8 @@ const startServer = async () => {
         startBossSchedulerJob();
         startCollectionPenaltyJob();
         startCashbackJob();
+        startShopEventCronJob();
+        startGachaWeeklyCronJob();
 
         const server = app.listen(PORT as number, '0.0.0.0', () => {
             console.log(`🚀 Server running on port ${PORT} (0.0.0.0)`);
