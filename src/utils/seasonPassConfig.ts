@@ -41,12 +41,12 @@ export const PASS_QUIZ_COMPLETE_XP = 15;
 export const PASS_MYSTERY_BOX_XP = 10;
 
 const SEASON_RANKS: SeasonRankInfo[] = [
-    { tierIndex: 1, minLevel: 1, maxLevel: 10, title: 'Tân Binh', icon: '🌱', badgeColor: '#10B981' },
-    { tierIndex: 2, minLevel: 11, maxLevel: 25, title: 'Chiến Binh', icon: '⚔️', badgeColor: '#3B82F6' },
-    { tierIndex: 3, minLevel: 26, maxLevel: 45, title: 'Hộ Vệ', icon: '🛡️', badgeColor: '#8B5CF6' },
-    { tierIndex: 4, minLevel: 46, maxLevel: 65, title: 'Tinh Anh', icon: '💎', badgeColor: '#F59E0B' },
-    { tierIndex: 5, minLevel: 66, maxLevel: 80, title: 'Huyền Thoại', icon: '👑', badgeColor: '#EF4444' },
-    { tierIndex: 6, minLevel: 81, maxLevel: null, title: 'Vô Cực', icon: '🔥', badgeColor: '#EC4899' },
+    { tierIndex: 1, minLevel: 1, maxLevel: 10, title: 'Mầm Xanh Tinh Khôi', icon: '🌱', badgeColor: '#10B981' },
+    { tierIndex: 2, minLevel: 11, maxLevel: 25, title: 'Lữ Khách Tầm Đạo', icon: '🧭', badgeColor: '#3B82F6' },
+    { tierIndex: 3, minLevel: 26, maxLevel: 45, title: 'Hộ Vệ Kiên Cường', icon: '🛡️', badgeColor: '#8B5CF6' },
+    { tierIndex: 4, minLevel: 46, maxLevel: 65, title: 'Hiệp Sĩ Khải Hoàn', icon: '⚔️', badgeColor: '#F59E0B' },
+    { tierIndex: 5, minLevel: 66, maxLevel: 80, title: 'Đại Sư Tinh Anh', icon: '👑', badgeColor: '#EC4899' },
+    { tierIndex: 6, minLevel: 81, maxLevel: null, title: 'Thánh Giả Vô Ngân', icon: '🌟', badgeColor: '#F97316' },
 ];
 
 const formatVnDate = (vnDate: Date): string => {

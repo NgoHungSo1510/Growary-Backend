@@ -190,3 +190,4 @@ export interface AdminSeasonSummaryDTO {
     isSettled: boolean;
     participantCount: number;
 }
+
