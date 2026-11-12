@@ -13,6 +13,7 @@ import notificationRoutes from './notifications';
 import collectionRoutes from './collections';
 import quizRoutes from './quiz';
 import systemRoutes from './system';
+import seasonPassRoutes from './seasonPass';
 
 const router = Router();
 
@@ -33,5 +34,6 @@ router.use('/', notificationRoutes);
 router.use('/', collectionRoutes);
 router.use('/', quizRoutes);
 router.use('/', systemRoutes);
+router.use('/', seasonPassRoutes);
 
 export default router;
