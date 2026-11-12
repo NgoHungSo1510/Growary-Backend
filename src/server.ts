@@ -27,11 +27,13 @@ import collectionRoutes from './routes/collections';
 import quizRoutes from './routes/quiz';
 import shopEventRoutes from './routes/shopEvents';
 import warehouseRoutes from './routes/warehouse';
+import seasonPassRoutes from './routes/seasonPass';
 import { startStreakCronJob, startBossSchedulerJob, startCollectionPenaltyJob } from './jobs/streak';
 import { startCashbackJob } from './jobs/cashbackJob';
 import { startShopEventCronJob } from './jobs/shopEventJob';
 import { startGachaWeeklyCronJob } from './jobs/gachaWeeklyJob';
 import { startAutoBackupCronJob } from './jobs/autoBackup';
+import { startSeasonPassCronJob } from './jobs/seasonPassJob';
 import { ensureQuizSampleSeed } from './seeds/quizSampleData';
 
 const app = express();
@@ -95,6 +97,7 @@ app.use('/api/collections', collectionRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/shop-events', shopEventRoutes);
 app.use('/api/warehouse', warehouseRoutes);
+app.use('/api/season-pass', seasonPassRoutes);
 
 // ── 404 Handler ───────────────────────────────────────────
 app.use((_req, res) => {
@@ -116,6 +119,7 @@ const startServer = async () => {
         startShopEventCronJob();
         startGachaWeeklyCronJob();
         startAutoBackupCronJob();
+        startSeasonPassCronJob();
 
         const server = app.listen(PORT as number, '0.0.0.0', () => {
             console.log(`🚀 Server running on port ${PORT} (0.0.0.0)`);

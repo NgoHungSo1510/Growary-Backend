@@ -7,6 +7,7 @@ import shopEventRoutes from '../routes/shopEvents';
 import warehouseRoutes from '../routes/warehouse';
 import gachaRoutes from '../routes/gacha';
 import quizRoutes from '../routes/quiz';
+import seasonPassRoutes from '../routes/seasonPass';
 
 export const createTestApp = () => {
     const app = express();
@@ -18,6 +19,7 @@ export const createTestApp = () => {
     app.use('/api/warehouse', warehouseRoutes);
     app.use('/api/gacha', gachaRoutes);
     app.use('/api/quiz', quizRoutes);
+    app.use('/api/season-pass', seasonPassRoutes);
     app.use(errorHandler);
     return app;
 };
