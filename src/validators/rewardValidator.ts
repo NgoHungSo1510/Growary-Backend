@@ -20,6 +20,8 @@ export const createRewardSchema = z.object({
     imageUrl: z.string().trim().optional().default(''),
     stock: z.number().min(0).optional(),
     shippingFee: z.number().min(0).optional().default(15000),
+    isActive: z.boolean().optional().default(true),
+    isFeatured: z.boolean().optional().default(false),
 });
 
 export const updateRewardSchema = z.object({
@@ -29,5 +31,6 @@ export const updateRewardSchema = z.object({
     imageUrl: z.string().trim().optional(),
     stock: z.number().min(0).optional(),
     isActive: z.boolean().optional(),
+    isFeatured: z.boolean().optional(),
     shippingFee: z.number().min(0).optional(),
 });

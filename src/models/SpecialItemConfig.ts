@@ -21,7 +21,7 @@ const specialItemConfigSchema = new Schema<ISpecialItemConfig>(
             type: String,
             required: [true, 'Loại mảnh là bắt buộc'],
             trim: true,
-            match: [/^frag_[0-9]+k$/, 'Loại mảnh phải có định dạng frag_Xk (vd: frag_3k)'],
+            match: [/^frag_[a-z0-9_]+$/, 'Loại mảnh phải có định dạng frag_<slug> (vd: frag_3k, frag_trasua)'],
         },
         isActive: {
             type: Boolean,

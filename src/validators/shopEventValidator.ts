@@ -50,5 +50,5 @@ export const createSpecialItemConfigSchema = z.object({
     fragmentType: z
         .string({ message: 'Loại mảnh là bắt buộc' })
         .trim()
-        .regex(/^frag_[0-9]+k$/, 'Loại mảnh phải có định dạng frag_Xk (vd: frag_3k)'),
+        .regex(/^frag_[a-z0-9_]+$/, 'Loại mảnh phải có định dạng frag_<slug> (vd: frag_3k, frag_trasua)'),
 });

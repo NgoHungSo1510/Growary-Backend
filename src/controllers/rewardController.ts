@@ -3,7 +3,7 @@ import { Reward, Voucher } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import * as vipService from '../services/vipService';
 import * as rewardService from '../services/rewardService';
-import * as seasonPassHooks from '../services/seasonPassHooks';
+import * as warehouseService from '../services/warehouseService';
 
 // ==================== SHOP REWARDS CRUD ====================
 
@@ -20,8 +20,18 @@ export const getRewards = async (_req: AuthRequest, res: Response): Promise<void
 
 export const createReward = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { title, description, pointCost, imageUrl, stock, shippingFee } = req.body;
-        const reward = await Reward.create({ title, description, pointCost, imageUrl, stock, shippingFee, createdBy: req.userId });
+        const { title, description, pointCost, imageUrl, stock, shippingFee, isActive, isFeatured } = req.body;
+        const reward = await Reward.create({
+            title,
+            description,
+            pointCost,
+            imageUrl,
+            stock,
+            shippingFee,
+            isActive,
+            isFeatured,
+            createdBy: req.userId,
+        });
         res.status(201).json({ reward });
     } catch (error) {
         res.status(500).json({ error: 'Failed to create reward' });
@@ -30,10 +40,20 @@ export const createReward = async (req: AuthRequest, res: Response): Promise<voi
 
 export const updateReward = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { title, description, pointCost, imageUrl, stock, isActive, shippingFee } = req.body;
+        const { title, description, pointCost, imageUrl, stock, isActive, isFeatured, shippingFee } = req.body;
+        const updateData: Record<string, unknown> = {};
+        if (title !== undefined) updateData.title = title;
+        if (description !== undefined) updateData.description = description;
+        if (pointCost !== undefined) updateData.pointCost = pointCost;
+        if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
+        if (stock !== undefined) updateData.stock = stock;
+        if (isActive !== undefined) updateData.isActive = isActive;
+        if (isFeatured !== undefined) updateData.isFeatured = isFeatured;
+        if (shippingFee !== undefined) updateData.shippingFee = shippingFee;
+
         const reward = await Reward.findByIdAndUpdate(
             req.params.id,
-            { title, description, pointCost, imageUrl, stock, isActive, shippingFee },
+            updateData,
             { new: true, runValidators: true }
         );
         if (!reward) { res.status(404).json({ error: 'Reward not found' }); return; }
@@ -112,11 +132,11 @@ export const openBox = async (req: AuthRequest, res: Response): Promise<void> =>
         if (!req.userId) { res.status(401).json({ error: 'Unauthorized' }); return; }
         const { boxId } = req.body;
         if (!boxId) { res.status(400).json({ error: 'Box ID is required' }); return; }
-        const reward = await rewardService.openMysteryBox(req.userId, boxId);
-        await seasonPassHooks.onMysteryBoxOpened(req.userId);
-        res.json({ message: 'Box opened', reward });
-    } catch (error: any) {
-        res.status(400).json({ error: error.message || 'Failed to open box' });
+        const result = await warehouseService.openMysteryBox(req.userId, boxId);
+        res.json({ message: 'Box opened', reward: result, ...result });
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Failed to open box';
+        res.status(400).json({ error: msg });
     }
 };
 
@@ -157,7 +177,7 @@ export const getMyVouchers = async (req: AuthRequest, res: Response): Promise<vo
 
 export const getUnreadVouchers = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const vouchers = await Voucher.find({ user: req.userId, isRead: false }).populate('reward');
+        const vouchers = await Voucher.find({ user: req.userId, hasUnreadApproval: true }).populate('reward');
         res.json({ vouchers });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch unread vouchers' });
@@ -180,8 +200,15 @@ export const useVoucher = async (req: AuthRequest, res: Response): Promise<void>
     try {
         const voucher = await Voucher.findOne({ code: req.params.code, user: req.userId });
         if (!voucher) { res.status(404).json({ error: 'Voucher not found' }); return; }
+        if (voucher.status === 'expired' || (voucher.expiresAt && new Date(voucher.expiresAt) < new Date())) {
+            if (voucher.status !== 'expired') {
+                voucher.status = 'expired';
+                await voucher.save();
+            }
+            res.status(400).json({ error: 'Voucher has expired' });
+            return;
+        }
         if (voucher.status !== 'active') { res.status(400).json({ error: 'Voucher is not active' }); return; }
-        if (voucher.expiresAt && voucher.expiresAt < new Date()) { res.status(400).json({ error: 'Voucher has expired' }); return; }
 
         voucher.status = 'pending_use';
         voucher.usedAt = new Date();
@@ -197,7 +224,7 @@ export const markVoucherRead = async (req: AuthRequest, res: Response): Promise<
     try {
         const voucher = await Voucher.findOneAndUpdate(
             { code: req.params.code, user: req.userId },
-            { isRead: true },
+            { $set: { hasUnreadApproval: false } },
             { new: true }
         );
         if (!voucher) { res.status(404).json({ error: 'Voucher not found' }); return; }
@@ -209,8 +236,20 @@ export const markVoucherRead = async (req: AuthRequest, res: Response): Promise<
 
 export const confirmVoucher = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const voucher = await Voucher.findOne({ code: req.params.code, status: { $in: ['active', 'pending_use'] } });
+        const voucher = await Voucher.findOne({ code: req.params.code });
         if (!voucher) { res.status(404).json({ error: 'Voucher not found or already used' }); return; }
+        if (voucher.status === 'expired' || (voucher.expiresAt && new Date(voucher.expiresAt) < new Date())) {
+            if (voucher.status !== 'expired') {
+                voucher.status = 'expired';
+                await voucher.save();
+            }
+            res.status(400).json({ error: 'Voucher has expired' });
+            return;
+        }
+        if (!['active', 'pending_use'].includes(voucher.status)) {
+            res.status(404).json({ error: 'Voucher not found or already used' });
+            return;
+        }
 
         voucher.status = 'used';
         voucher.usedAt = new Date();
