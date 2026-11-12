@@ -3,6 +3,7 @@ import { Reward, Voucher } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import * as vipService from '../services/vipService';
 import * as rewardService from '../services/rewardService';
+import * as seasonPassHooks from '../services/seasonPassHooks';
 
 // ==================== SHOP REWARDS CRUD ====================
 
@@ -112,6 +113,7 @@ export const openBox = async (req: AuthRequest, res: Response): Promise<void> =>
         const { boxId } = req.body;
         if (!boxId) { res.status(400).json({ error: 'Box ID is required' }); return; }
         const reward = await rewardService.openMysteryBox(req.userId, boxId);
+        await seasonPassHooks.onMysteryBoxOpened(req.userId);
         res.json({ message: 'Box opened', reward });
     } catch (error: any) {
         res.status(400).json({ error: error.message || 'Failed to open box' });

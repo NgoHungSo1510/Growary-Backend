@@ -1,6 +1,7 @@
 import mongoose, { Types } from 'mongoose';
 import { UserInventory, MysteryBox, User, SpecialItem } from '../models';
 import { InventoryMysteryBox, OpenMysteryBoxResult } from '@shared';
+import * as seasonPassHooks from './seasonPassHooks';
 
 interface PopulatedBoxDoc {
     _id: Types.ObjectId;
@@ -197,6 +198,7 @@ export async function openMysteryBox(userId: string, boxId: string): Promise<Ope
 
     // 5. Save updated inventory
     await inventory.save();
+    await seasonPassHooks.onMysteryBoxOpened(userId);
 
     const primaryReward = rewardedItems[0];
 

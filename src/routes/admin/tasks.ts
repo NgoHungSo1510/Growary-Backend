@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { DailyPlan, TaskTemplate, User } from '../../models';
 import { AuthRequest } from '../../middleware/auth';
 import { processLevelUp } from '../../services/levelService';
+import * as seasonPassHooks from '../../services/seasonPassHooks';
 
 const router = Router();
 
@@ -88,6 +89,13 @@ router.patch('/tasks/:planId/:taskId/approve', async (req: AuthRequest, res: Res
 
                 await processLevelUp(user, task.pointsReward);
                 await user.save();
+                await seasonPassHooks.onTaskCompleted(
+                    plan.user.toString(),
+                    plan._id.toString(),
+                    String((task as { _id?: unknown })._id ?? ''),
+                    task.coinReward || 5,
+                    task.pointsReward
+                );
             }
         }
 

@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import * as seasonPassHooks from '../services/seasonPassHooks';
 import * as quizService from '../services/quizService';
 import { getQuizLeaderboard } from '../services/quizLeaderboardService';
 
@@ -92,6 +93,9 @@ export const completeQuiz = async (
             req.body.attemptId,
             'finished'
         );
+        if (!result.alreadyCompleted) {
+            await seasonPassHooks.onQuizCompleted(req.userId, result.coinsEarned, result.xpEarned);
+        }
         res.json(result);
     } catch (error) {
         next(error);

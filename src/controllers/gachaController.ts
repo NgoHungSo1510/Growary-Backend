@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { v4 as uuidv4 } from 'uuid';
 import { processLevelUp } from '../services/levelService';
 import * as gachaRevampService from '../services/gachaRevampService';
+import * as seasonPassHooks from '../services/seasonPassHooks';
 import { GachaItemRarity } from '@shared';
 
 function seededRandom(seed: number) {
@@ -252,6 +253,10 @@ export const spinGacha = async (
         } catch (scoreErr) {
             console.error('Error recording gacha spin score:', scoreErr);
         }
+
+        const coinsWon = selectedItem.type === 'coins' ? (selectedItem.value || 0) : 0;
+        const xpWon = selectedItem.type === 'xp' ? (selectedItem.value || 0) : 0;
+        await seasonPassHooks.onGachaSpun(user._id.toString(), coinsWon, xpWon);
 
         res.json({
             success: true,

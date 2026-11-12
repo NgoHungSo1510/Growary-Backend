@@ -11,6 +11,7 @@ import {
 import { processLevelUp } from '../services/levelService';
 import { checkAndGrantMilestones } from '../utils/milestones';
 import { calculatePenaltyAdjustedReward } from '../utils/penalty';
+import * as seasonPassHooks from '../services/seasonPassHooks';
 import { STREAK_MIN_TASKS, VOUCHER_EXPIRY_DAYS, getStartOfDay } from '../constants';
 import { GrantedRewards } from '../types';
 import { v4 as uuidv4 } from 'uuid';
@@ -214,6 +215,7 @@ export const completeTask = async (req: AuthRequest, res: Response): Promise<voi
             const finalCoinReward = penaltyResult.coins;
             const finalXpReward = penaltyResult.xp;
 
+            let achievedStreak: number | null = null;
             if (task.adminApprovalStatus === 'approved') {
                 const user = await User.findById(req.userId);
                 if (user) {
@@ -246,6 +248,9 @@ export const completeTask = async (req: AuthRequest, res: Response): Promise<voi
                     if (streakProgress.streakUpdated) {
                         plan.isDailyScoreCalculated = true;
                     }
+                    if (streakProgress.streakUpdated || streakProgress.restoredGrace) {
+                        achievedStreak = user.currentStreak;
+                    }
 
                     await user.save();
 
@@ -271,6 +276,18 @@ export const completeTask = async (req: AuthRequest, res: Response): Promise<voi
             }
 
             await plan.save();
+            if (task.adminApprovalStatus === 'approved') {
+                await seasonPassHooks.onTaskCompleted(
+                    req.userId!,
+                    plan._id.toString(),
+                    String((task as { _id?: unknown })._id ?? ''),
+                    finalCoinReward,
+                    finalXpReward
+                );
+                if (achievedStreak !== null) {
+                    await seasonPassHooks.onDailyStreakAchieved(req.userId!, achievedStreak);
+                }
+            }
             res.json({ plan, grantedRewards });
             return;
         } else if (!isCompleted && wasCompleted) {

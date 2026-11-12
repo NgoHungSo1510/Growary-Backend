@@ -1,6 +1,7 @@
 import { User, BossEvent, BossRecord, Journal, Voucher, SystemConfig, UserInventory } from '../models';
 import { BossCollection, UserBossCollection } from '../models';
 import { processLevelUp } from './levelService';
+import * as seasonPassHooks from './seasonPassHooks';
 import { v4 as uuidv4 } from 'uuid';
 import { VOUCHER_EXPIRY_DAYS, getStartOfDay } from '../constants';
 
@@ -135,6 +136,7 @@ export const distributeBossRewards = async (bossId: string) => {
             );
 
             console.log(`${rankLabel} ${user.username}: ${bonusCoins + personalChest} Coins, ${bonusXp} XP, ${bonusTickets} Tickets`);
+            await seasonPassHooks.onBossDefeated(user._id.toString(), bonusCoins + personalChest, bonusXp);
         }
     } catch (error) {
         console.error('Error distributing boss rewards:', error);
