@@ -189,7 +189,10 @@ export const getBossCollections = async (req: AuthRequest, res: Response): Promi
         const collections = await BossCollection.find({ isActive: true }).sort({ year: 1, month: 1 });
 
         const result = await Promise.all(collections.map(async (col) => {
-            const bosses = await BossEvent.find({ collectionId: col._id }, '_id title avatarImageUrl status');
+            const bosses = await BossEvent.find(
+                { collectionId: col._id },
+                '_id title description secretDescription avatarImageUrl status loreTitle loreContent isLimited colorBg colorIcon weekActivatedAt updatedAt'
+            );
             let userCol = await UserBossCollection.findOne({ userId: req.userId, collectionId: col._id });
             if (!userCol) {
                 userCol = await UserBossCollection.create({
@@ -203,8 +206,17 @@ export const getBossCollections = async (req: AuthRequest, res: Response): Promi
                 bosses: bosses.map(b => ({
                     _id: b._id,
                     title: b.title,
+                    description: b.description,
+                    secretDescription: b.secretDescription,
                     avatarImageUrl: b.avatarImageUrl,
                     status: b.status,
+                    loreTitle: b.loreTitle,
+                    loreContent: b.loreContent,
+                    isLimited: b.isLimited,
+                    colorBg: b.colorBg,
+                    colorIcon: b.colorIcon,
+                    weekActivatedAt: b.weekActivatedAt,
+                    updatedAt: b.updatedAt,
                     isUnlocked: userCol!.unlockedBosses.some(id => id.toString() === b._id.toString()),
                 })),
                 userProgress: {
@@ -212,6 +224,7 @@ export const getBossCollections = async (req: AuthRequest, res: Response): Promi
                     totalCount: bosses.length,
                     isCompleted: userCol.isCompleted,
                     bonusTicketsClaimed: userCol.bonusTicketsClaimed,
+                    completedAt: userCol.completedAt,
                 },
             };
         }));

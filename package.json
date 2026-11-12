@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "seed": "ts-node src/seeds/index.ts",
+    "backup:data": "ts-node src/scripts/backupSpecialAndGacha.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"

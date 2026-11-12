@@ -29,3 +29,20 @@ export const getJwtSecret = (): string => {
 
 export const escapeRegex = (str: string): string =>
     str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// ==================== QUIZ GAMEPLAY CONSTANTS ====================
+export const QUIZ_QUESTION_TIME_SEC = 30;
+export const QUIZ_SPEED_THRESHOLD_SEC = 10;
+export const QUIZ_SPEED_BONUS_COINS = 10;
+export const QUIZ_STREAK_MULTIPLIERS: Readonly<Record<number, number>> = Object.freeze({
+    2: 0.1,
+    3: 0.2,
+    4: 0.3,
+    5: 0.5,
+});
+export const QUIZ_XP_PER_CORRECT = 10;
+export const QUIZ_PERFECT_XP_BONUS = 20;
+export const QUIZ_PERFECT_TICKETS = 1;
+export const QUIZ_TRANSITION_GRACE_SEC = 5;
+export const QUIZ_ATTEMPT_TTL_SEC_PER_QUESTION = 60;
+export const QUIZ_LEADERBOARD_LIMIT = 20;

@@ -54,7 +54,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         const token = jwt.sign(
             { userId: user._id.toString(), role: user.role },
             getJwtSecret(),
-            { expiresIn: '7d' }
+            { expiresIn: '30d' }
         );
 
         res.status(201).json({
@@ -98,7 +98,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         const token = jwt.sign(
             { userId: user._id.toString(), role: user.role },
             getJwtSecret(),
-            { expiresIn: '7d' }
+            { expiresIn: '30d' }
         );
 
         res.json({

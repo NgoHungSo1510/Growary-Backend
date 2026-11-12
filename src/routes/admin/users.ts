@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import bcrypt from 'bcryptjs';
 import { User } from '../../models';
 import { AuthRequest } from '../../middleware/auth';
 import { escapeRegex } from '../../constants';
@@ -86,7 +87,11 @@ router.patch('/users/:id/points', validate(adjustPointsSchema), async (req: Auth
 router.put('/users/:id', validate(updateUserSchema), async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const updates = req.body;
-        delete updates.password; // Keep it safe
+        if (updates.password && typeof updates.password === 'string' && updates.password.trim().length >= 6) {
+            updates.password = await bcrypt.hash(updates.password.trim(), 10);
+        } else {
+            delete updates.password;
+        }
 
         const user = await User.findByIdAndUpdate(req.params.id, updates, { new: true }).select('-password');
         if (!user) { res.status(404).json({ error: 'User not found' }); return; }

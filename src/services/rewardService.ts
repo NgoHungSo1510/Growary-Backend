@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Reward, Voucher, User, UserInventory, SpecialItem, MysteryBox } from '../models';
+import { Reward, Voucher, User, UserInventory, SpecialItem, MysteryBox, ISpecialItem } from '../models';
 import { checkAndGrantMilestones } from '../utils/milestones';
 import { calcCashback } from '../utils/vipUtils';
 import { checkAndApplyVipRankUp } from './vipService';
@@ -18,6 +18,47 @@ export interface PurchaseResult {
     newVipTier?: any;
     rankUpReward?: any;
 }
+
+/**
+ * Safely rolls back deducted coupons to user inventory using $elemMatch.
+ * Re-adds the coupon item if it was previously removed upon reaching quantity 0.
+ *
+ * @param userId - ID of the user owning the inventory
+ * @param coupons - Array of SpecialItem documents that were previously deducted
+ */
+const rollbackDeductedCoupons = async (userId: string, coupons: ISpecialItem[]): Promise<void> => {
+    for (const item of coupons) {
+        const rollbackResult = await UserInventory.findOneAndUpdate(
+            {
+                user: userId,
+                items: {
+                    $elemMatch: {
+                        itemType: 'special_item',
+                        specialItem: item._id,
+                    },
+                },
+            },
+            { $inc: { 'items.$.quantity': 1 } }
+        );
+
+        if (!rollbackResult) {
+            await UserInventory.updateOne(
+                { user: userId },
+                {
+                    $push: {
+                        items: {
+                            itemType: 'special_item',
+                            specialItem: item._id,
+                            rewardForm: 'full',
+                            quantity: 1,
+                            lastUpdated: new Date(),
+                        },
+                    },
+                }
+            );
+        }
+    }
+};
 
 /**
  * Handle purchasing a reward from the shop with coupon deduction, VIP cashback, and voucher creation
@@ -43,7 +84,7 @@ export const purchaseRewardItem = async (
     let appliedProductDiscount = 0;
 
     const couponsToApply = options.couponTypes || (options.couponType ? [options.couponType] : []);
-    const deductedCoupons: any[] = [];
+    const deductedCoupons: ISpecialItem[] = [];
 
     for (const cType of couponsToApply) {
         if (!cType) continue;
@@ -51,30 +92,43 @@ export const purchaseRewardItem = async (
         const spItem = await SpecialItem.findOne({ type: cType });
         if (!spItem) {
             // Rollback already deducted coupons
-            for (const d of deductedCoupons) {
-                await UserInventory.findOneAndUpdate(
-                    { user: userId, 'items.itemType': 'special_item', 'items.specialItem': d._id },
-                    { $inc: { 'items.$.quantity': 1 } }
-                );
-            }
+            await rollbackDeductedCoupons(userId, deductedCoupons);
             throw new Error(`Invalid coupon type: ${cType}`);
         }
 
         const inventory = await UserInventory.findOneAndUpdate(
-            { user: userId, 'items.itemType': 'special_item', 'items.specialItem': spItem._id, 'items.quantity': { $gt: 0 } },
+            {
+                user: userId,
+                items: {
+                    $elemMatch: {
+                        itemType: 'special_item',
+                        specialItem: spItem._id,
+                        quantity: { $gt: 0 },
+                    },
+                },
+            },
             { $inc: { 'items.$.quantity': -1 } },
             { new: true }
         );
 
         if (!inventory) {
-            for (const d of deductedCoupons) {
-                await UserInventory.findOneAndUpdate(
-                    { user: userId, 'items.itemType': 'special_item', 'items.specialItem': d._id },
-                    { $inc: { 'items.$.quantity': 1 } }
-                );
-            }
+            await rollbackDeductedCoupons(userId, deductedCoupons);
             throw new Error(`You do not have enough of coupon: ${cType}`);
         }
+
+        // Atomically remove coupon entry from inventory if quantity reached 0 or less
+        await UserInventory.updateOne(
+            { user: userId },
+            {
+                $pull: {
+                    items: {
+                        itemType: 'special_item',
+                        specialItem: spItem._id,
+                        quantity: { $lte: 0 },
+                    },
+                },
+            }
+        );
 
         deductedCoupons.push(spItem);
 
@@ -144,12 +198,7 @@ export const purchaseRewardItem = async (
             await Reward.findByIdAndUpdate(reward._id, { $inc: { stock: 1 }, isActive: true });
         }
         // Rollback coupons
-        for (const spItem of deductedCoupons) {
-            await UserInventory.findOneAndUpdate(
-                { user: userId, 'items.itemType': 'special_item', 'items.specialItem': spItem._id },
-                { $inc: { 'items.$.quantity': 1 } }
-            );
-        }
+        await rollbackDeductedCoupons(userId, deductedCoupons);
         throw new Error('Not enough coins');
     }
 
@@ -192,7 +241,7 @@ export const getUserInventoryItems = async (userId: string) => {
         .populate('items.specialItem')
         .populate('items.mysteryBox');
 
-    const items = inventory ? inventory.items : [];
+    const items = inventory ? inventory.items.filter(item => item.quantity > 0) : [];
 
     return items.map(item => {
         if (item.itemType === 'mystery_box') {

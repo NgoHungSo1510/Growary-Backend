@@ -31,6 +31,8 @@ import { startStreakCronJob, startBossSchedulerJob, startCollectionPenaltyJob } 
 import { startCashbackJob } from './jobs/cashbackJob';
 import { startShopEventCronJob } from './jobs/shopEventJob';
 import { startGachaWeeklyCronJob } from './jobs/gachaWeeklyJob';
+import { startAutoBackupCronJob } from './jobs/autoBackup';
+import { ensureQuizSampleSeed } from './seeds/quizSampleData';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -106,12 +108,14 @@ app.use(errorHandler);
 const startServer = async () => {
     try {
         await connectDB();
+        await ensureQuizSampleSeed();
         startStreakCronJob();
         startBossSchedulerJob();
         startCollectionPenaltyJob();
         startCashbackJob();
         startShopEventCronJob();
         startGachaWeeklyCronJob();
+        startAutoBackupCronJob();
 
         const server = app.listen(PORT as number, '0.0.0.0', () => {
             console.log(`🚀 Server running on port ${PORT} (0.0.0.0)`);

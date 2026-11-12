@@ -1,7 +1,5 @@
 import mongoose, { Types } from 'mongoose';
-import { UserInventory } from '../models/UserInventory';
-import { MysteryBox } from '../models/MysteryBox';
-import { User } from '../models/User';
+import { UserInventory, MysteryBox, User, SpecialItem } from '../models';
 import { InventoryMysteryBox, OpenMysteryBoxResult } from '@shared';
 
 interface PopulatedBoxDoc {
@@ -10,6 +8,23 @@ interface PopulatedBoxDoc {
     description?: string;
     imageUrl?: string;
     rarity: string;
+}
+
+interface PopulatedSpecialItemDoc {
+    _id: Types.ObjectId | string;
+    name: string;
+    description?: string;
+    imageUrl?: string;
+    type?: string;
+}
+
+function isPopulatedSpecialItem(item: unknown): item is PopulatedSpecialItemDoc {
+    return (
+        typeof item === 'object' &&
+        item !== null &&
+        'name' in item &&
+        typeof (item as { name: unknown }).name === 'string'
+    );
 }
 
 function normalizeRarity(rarity?: string): 'normal' | 'rare' | 'epic' | 'legend' {
@@ -78,8 +93,12 @@ export async function openMysteryBox(userId: string, boxId: string): Promise<Ope
         throw new Error('Bạn không sở hữu rương này hoặc đã hết số lượng');
     }
 
-    // 2. Fetch mystery box configuration
-    const box = await MysteryBox.findById(boxObjectId);
+    // 2. Fetch mystery box configuration with populated rewards
+    const boxQuery = MysteryBox.findById(boxObjectId);
+    const box = typeof (boxQuery as any)?.populate === 'function'
+        ? await boxQuery.populate('rewards.specialItem')
+        : await boxQuery;
+
     if (!box || !box.isActive) {
         throw new Error('Rương kho báu không tồn tại hoặc đã hết hiệu lực');
     }
@@ -87,7 +106,12 @@ export async function openMysteryBox(userId: string, boxId: string): Promise<Ope
     // 3. Decrement box quantity
     inventory.items[boxItemIndex].quantity -= 1;
     inventory.items[boxItemIndex].lastUpdated = new Date();
-    const remainingBoxes = inventory.items[boxItemIndex].quantity;
+    const remainingBoxes = Math.max(0, inventory.items[boxItemIndex].quantity);
+
+    // If box quantity reaches 0, remove it from inventory array so it doesn't linger
+    if (inventory.items[boxItemIndex].quantity <= 0) {
+        inventory.items.splice(boxItemIndex, 1);
+    }
 
     // 4. Determine rewards
     const rewardedItems: NonNullable<OpenMysteryBoxResult['rewards']> = [];
@@ -96,9 +120,30 @@ export async function openMysteryBox(userId: string, boxId: string): Promise<Ope
         for (const reward of box.rewards) {
             const roll = Math.random() * 100;
             if (roll <= reward.probability) {
+                let specialName = 'Vật phẩm';
+                let rawSpecialId: Types.ObjectId;
+
+                if (reward.specialItem && typeof reward.specialItem === 'object' && 'name' in (reward.specialItem as any)) {
+                    const spDoc = reward.specialItem as unknown as PopulatedSpecialItemDoc;
+                    specialName = spDoc.name || 'Vật phẩm';
+                    rawSpecialId = typeof spDoc._id === 'string' ? new Types.ObjectId(spDoc._id) : spDoc._id;
+                } else {
+                    rawSpecialId = typeof reward.specialItem === 'string'
+                        ? new Types.ObjectId(reward.specialItem)
+                        : (reward.specialItem as Types.ObjectId);
+                    try {
+                        const found = await SpecialItem.findById(rawSpecialId);
+                        if (found?.name) specialName = found.name;
+                    } catch {
+                        // Keep fallback
+                    }
+                }
+
+                const rewardDisplayName = reward.rewardForm === 'fragment' ? `Mảnh ${specialName}` : specialName;
+
                 rewardedItems.push({
                     type: reward.rewardForm === 'fragment' ? 'fragment' : 'item',
-                    name: `Mảnh ${reward.specialItem?.toString().slice(-4) || 'Vật phẩm'}`,
+                    name: rewardDisplayName,
                     amount: reward.amount,
                     rarity: box.rarity,
                 });
@@ -107,7 +152,7 @@ export async function openMysteryBox(userId: string, boxId: string): Promise<Ope
                 const existingRewardIdx = inventory.items.findIndex(
                     (it) =>
                         it.itemType === 'special_item' &&
-                        it.specialItem?.toString() === reward.specialItem?.toString() &&
+                        it.specialItem?.toString() === rawSpecialId.toString() &&
                         it.rewardForm === reward.rewardForm
                 );
 
@@ -117,7 +162,7 @@ export async function openMysteryBox(userId: string, boxId: string): Promise<Ope
                 } else {
                     inventory.items.push({
                         itemType: 'special_item',
-                        specialItem: reward.specialItem,
+                        specialItem: rawSpecialId,
                         rewardForm: reward.rewardForm,
                         quantity: reward.amount,
                         lastUpdated: new Date(),

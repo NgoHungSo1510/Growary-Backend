@@ -1,7 +1,13 @@
 import { Response } from 'express';
 import { DailyPlan, User, Journal, PenaltyConfig, TaskTemplate, Voucher, BossEvent, BossRecord } from '../models';
 import { AuthRequest } from '../middleware/auth';
-import { getMandatoryTasks, buildCarryoverTasks } from '../services/planService';
+import {
+    getMandatoryTasks,
+    buildCarryoverTasks,
+    reconcileYesterdayPlanAndPenalties,
+    applyDailyTaskStreakProgress,
+    syncBossAttackPoints,
+} from '../services/planService';
 import { processLevelUp } from '../services/levelService';
 import { checkAndGrantMilestones } from '../utils/milestones';
 import { calculatePenaltyAdjustedReward } from '../utils/penalty';
@@ -30,52 +36,17 @@ export const getTodayPlan = async (req: AuthRequest, res: Response): Promise<voi
             const mandatoryTasks = await getMandatoryTasks();
             const yesterday = getStartOfDay();
             yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayPlan = await DailyPlan.findOne({ user: req.userId, date: yesterday });
-            const backlog: { taskTitle: string; originalDate: Date; skipCount: number; pointsReward: number }[] = [];
-            let prevTasks: any[] = [];
 
-            if (yesterdayPlan) {
-                const user = await User.findById(req.userId);
-                const incompleteTasks = yesterdayPlan.tasks.filter(
-                    t => !t.isCompleted && t.adminApprovalStatus !== 'rejected'
-                );
-
-                if (user && (!user.lastStreakCheckDate || user.lastStreakCheckDate.getTime() < today.getTime())) {
-                    if (incompleteTasks.length > 0) {
-                        const config = await PenaltyConfig.findOne();
-                        const penaltyCoin = config ? config.missedQuestPenaltyCoin : 50;
-                        for (const t of incompleteTasks) {
-                            user.coins = Math.max(0, user.coins - penaltyCoin);
-                            user.pendingPenalties.push({
-                                questId: (t as any).templateId,
-                                questTitle: t.title,
-                                penaltyAmount: penaltyCoin,
-                                reason: 'missed',
-                                createdAt: new Date()
-                            });
-                        }
-                    }
-                    user.lastStreakCheckDate = today;
-                    await user.save();
-                }
-
-                for (const t of incompleteTasks) {
-                    const existingBacklog = yesterdayPlan.backlogFromPreviousDay.find(b => b.taskTitle === t.title);
-                    backlog.push({
-                        taskTitle: t.title,
-                        originalDate: existingBacklog?.originalDate || yesterday,
-                        skipCount: (existingBacklog?.skipCount || 0) + 1,
-                        pointsReward: t.pointsReward,
-                    });
-                }
-
-                prevTasks = buildCarryoverTasks(yesterdayPlan.tasks as any[]);
-            }
+            const { backlog, carryoverTasks } = await reconcileYesterdayPlanAndPenalties(
+                req.userId!,
+                today,
+                yesterday
+            );
 
             plan = await DailyPlan.create({
                 user: req.userId,
                 date: today,
-                tasks: [...mandatoryTasks, ...prevTasks],
+                tasks: [...mandatoryTasks, ...carryoverTasks],
                 backlogFromPreviousDay: backlog,
             });
         }
@@ -267,9 +238,12 @@ export const completeTask = async (req: AuthRequest, res: Response): Promise<voi
 
                     const completedApproved = plan.tasks.filter(t => t.isCompleted && t.adminApprovalStatus === 'approved').length;
 
-                    if (completedApproved === STREAK_MIN_TASKS && !plan.isDailyScoreCalculated) {
-                        user.currentStreak += 1;
-                        user.longestStreak = Math.max(user.currentStreak, user.longestStreak);
+                    const streakProgress = applyDailyTaskStreakProgress(
+                        user,
+                        completedApproved,
+                        plan.isDailyScoreCalculated
+                    );
+                    if (streakProgress.streakUpdated) {
                         plan.isDailyScoreCalculated = true;
                     }
 
@@ -282,43 +256,7 @@ export const completeTask = async (req: AuthRequest, res: Response): Promise<voi
                         grantedRewards.items.push(...mlRewards.items);
                     }
 
-                    const activeBosses = await BossEvent.find({ status: 'active' });
-                    if (activeBosses.length > 0) {
-                        let maxAttackPoints = 0;
-                        let maxAccumulatedCoins = 0;
-                        const userRecords = [];
-
-                        // 1. Lấy tất cả BossRecord và tìm giá trị lớn nhất (để đồng bộ nếu có Record mới tạo)
-                        for (const boss of activeBosses) {
-                            let userRecord = await BossRecord.findOne({ eventId: boss._id, userId: req.userId });
-                            if (userRecord) {
-                                if (userRecord.attackPoints > maxAttackPoints) maxAttackPoints = userRecord.attackPoints;
-                                if (userRecord.accumulatedCoins > maxAccumulatedCoins) maxAccumulatedCoins = userRecord.accumulatedCoins;
-                                userRecords.push(userRecord);
-                            } else {
-                                userRecord = new BossRecord({
-                                    eventId: boss._id,
-                                    userId: req.userId,
-                                    totalDamageDealt: 0,
-                                    accumulatedCoins: 0,
-                                    pendingDamageAnimation: 0,
-                                    attackPoints: 0,
-                                    hasUnlockedStory: false,
-                                });
-                                userRecords.push(userRecord);
-                            }
-                        }
-
-                        // 2. Đồng bộ và cộng điểm thưởng chung cho TẤT CẢ boss
-                        const newAttackPoints = maxAttackPoints + finalXpReward;
-                        const newCoins = maxAccumulatedCoins + Math.floor(finalCoinReward / 2);
-
-                        for (const record of userRecords) {
-                            record.attackPoints = newAttackPoints;
-                            record.accumulatedCoins = newCoins;
-                            await record.save();
-                        }
-                    }
+                    await syncBossAttackPoints(req.userId!, finalXpReward, finalCoinReward);
                 }
 
                 const today = getStartOfDay();

@@ -23,6 +23,11 @@ export interface IUser extends Document {
         timezone: string;
     };
     lastStreakCheckDate?: Date;
+    lastPenaltyCheckDate?: Date;
+    streakRestoresThisMonth?: number;
+    lastStreakRestoreMonth?: string | null;
+    streakGracePeriod?: boolean;
+    missedStreakDate?: Date | null;
     pendingPenalties: {
         questId?: mongoose.Types.ObjectId;
         questTitle?: string;
@@ -121,6 +126,26 @@ const UserSchema = new Schema<IUser>(
         },
         lastStreakCheckDate: {
             type: Date,
+        },
+        lastPenaltyCheckDate: {
+            type: Date,
+            default: null,
+        },
+        streakRestoresThisMonth: {
+            type: Number,
+            default: 0,
+        },
+        lastStreakRestoreMonth: {
+            type: String,
+            default: null,
+        },
+        streakGracePeriod: {
+            type: Boolean,
+            default: false,
+        },
+        missedStreakDate: {
+            type: Date,
+            default: null,
         },
         pendingPenalties: [
             {

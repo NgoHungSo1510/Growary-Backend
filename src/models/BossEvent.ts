@@ -23,7 +23,7 @@ export interface IBossEvent extends Document {
     loreContent?: string;
     collectionId?: mongoose.Types.ObjectId;
     isLimited?: boolean;
-    miniGameType?: 'random' | 'tap' | 'reflex' | 'quiz';
+    miniGameType?: 'random' | 'tap' | 'reflex' | 'quiz' | 'memory';
     miniGameQuestions?: {
         question: string;
         options: string[];
@@ -71,7 +71,7 @@ const BossEventSchema = new Schema<IBossEvent>(
         loreContent: { type: String, trim: true, default: null },
         collectionId: { type: Schema.Types.ObjectId, ref: 'BossCollection', default: null },
         isLimited: { type: Boolean, default: true },
-        miniGameType: { type: String, enum: ['random', 'tap', 'reflex', 'quiz'], default: 'random' },
+        miniGameType: { type: String, enum: ['random', 'tap', 'reflex', 'quiz', 'memory'], default: 'random' },
         miniGameQuestions: [
             {
                 question: { type: String, required: true },
