@@ -13,12 +13,27 @@ export interface PendingPenalty {
     createdAt: string;
 }
 
+export interface UserSeasonBadge {
+    seasonCode: string;
+    seasonNumber: number;
+    quarter: 1 | 2 | 3 | 4;
+    year: number;
+    highestLevel: number;
+    rankTitle: string;
+    rankIcon: string;
+    isEliteUnlocked: boolean;
+    settledAt: string | Date;
+}
+
 export interface User {
     id?: string;
     _id?: string;
     username: string;
     email: string;
     avatar?: string;
+    avatarFrame?: string | null;
+    unlockedAvatarFrames?: string[];
+    seasonBadges?: UserSeasonBadge[];
     role: 'admin' | 'user';
     coins: number;
     xp: number;

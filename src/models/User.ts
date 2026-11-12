@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import type { UserSeasonBadge } from '../shared/user';
 
 export interface IUser extends Document {
     _id: mongoose.Types.ObjectId;
@@ -6,6 +7,9 @@ export interface IUser extends Document {
     email: string;
     password: string;
     avatar?: string;
+    avatarFrame?: string | null;
+    unlockedAvatarFrames: string[];
+    seasonBadges: UserSeasonBadge[];
     role: 'admin' | 'user';
     coins: number;
     gachaTickets: number;
@@ -67,6 +71,33 @@ const UserSchema = new Schema<IUser>(
         },
         avatar: {
             type: String,
+        },
+        avatarFrame: {
+            type: String,
+            default: null,
+        },
+        unlockedAvatarFrames: {
+            type: [String],
+            default: [],
+        },
+        seasonBadges: {
+            type: [
+                new Schema(
+                    {
+                        seasonCode: { type: String, required: true },
+                        seasonNumber: { type: Number, required: true },
+                        quarter: { type: Number, enum: [1, 2, 3, 4], required: true },
+                        year: { type: Number, required: true },
+                        highestLevel: { type: Number, required: true },
+                        rankTitle: { type: String, required: true },
+                        rankIcon: { type: String, required: true },
+                        isEliteUnlocked: { type: Boolean, default: false },
+                        settledAt: { type: Date, required: true },
+                    },
+                    { _id: false }
+                ),
+            ],
+            default: [],
         },
         role: {
             type: String,

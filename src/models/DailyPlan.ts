@@ -18,6 +18,7 @@ export interface IDailyTask {
     completedAt?: Date;
     proofImageUrl?: string;
     category?: string;
+    passXpAwarded?: boolean;
 }
 
 // Backlog item from previous day
@@ -68,6 +69,7 @@ const DailyTaskSubSchema = new Schema<IDailyTask>(
         completedAt: Date,
         proofImageUrl: String,
         category: String,
+        passXpAwarded: { type: Boolean, default: false },
     },
     { _id: true }
 );

@@ -31,3 +31,5 @@ export { ShopEvent, IShopEvent } from './ShopEvent';
 export { SpecialItemConfig, ISpecialItemConfig } from './SpecialItemConfig';
 export { GachaWeeklyEvent, IGachaWeeklyEvent, IFeaturedBox, IWeeklyRewards, IWeeklyRewardTier } from './GachaWeeklyEvent';
 export { GachaLeaderboard, IGachaLeaderboard, LeaderboardRarity } from './GachaLeaderboard';
+export { SeasonPass, ISeasonPass } from './SeasonPass';
+export { UserPassProgress, IUserPassProgress, IUserQuestState } from './UserPassProgress';
