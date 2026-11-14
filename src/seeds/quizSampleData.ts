@@ -17,33 +17,9 @@ export async function ensureQuizSampleSeed(): Promise<void> {
             endTime: { $gt: now },
         });
 
-        if (topicCount === 0 || questionCount < 15 || activeEventCount === 0) {
-            console.log('🌱 [QuizSeed] Initializing quiz sample seed data...');
+        if (topicCount < 8 || questionCount < 160 || activeEventCount === 0) {
+            console.log('🌱 [QuizSeed] Initializing quiz sample seed data (8 topics, 160 questions, lifecycle events)...');
             await seedQuiz();
-
-            const hasActive = await QuizEvent.findOne({
-                status: 'active',
-                endTime: { $gt: now },
-            });
-
-            if (!hasActive) {
-                const next30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-                await QuizEvent.create({
-                    title: 'Đấu Trường Tri Thức Growary',
-                    description: 'Tham gia giải đố kiến thức hàng ngày để nhận xu thưởng và điểm xếp hạng!',
-                    startTime: now,
-                    endTime: next30Days,
-                    status: 'active',
-                    colorBg: '#2563EB',
-                    colorIcon: '#FFFFFF',
-                    iconName: 'psychology',
-                    rewardPerCorrect: 50,
-                    maxAttemptsPerUser: 5,
-                    attemptCooldownHours: 4,
-                    questionsPerAttempt: 5,
-                });
-                console.log('✅ [QuizSeed] Created active QuizEvent "Đấu Trường Tri Thức Growary"');
-            }
             console.log('✅ [QuizSeed] Sample quiz data verified successfully');
         }
     } catch (error) {

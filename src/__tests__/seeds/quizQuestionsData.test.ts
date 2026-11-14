@@ -3,35 +3,35 @@ import { QUIZ_SEED_TOPICS } from '../../seeds/data/quizQuestions';
 import { createQuizQuestionSchema } from '../../validators/quizValidator';
 
 describe('Quiz Seed Questions Data Verification', () => {
-  it('contains exactly 4 curated topics', () => {
+  it('contains exactly 8 curated topics', () => {
     expect(QUIZ_SEED_TOPICS).toBeDefined();
     expect(Array.isArray(QUIZ_SEED_TOPICS)).toBe(true);
-    expect(QUIZ_SEED_TOPICS.length).toBe(4);
+    expect(QUIZ_SEED_TOPICS.length).toBe(8);
   });
 
-  it('contains at least 52 questions in total', () => {
+  it('contains at least 160 questions in total', () => {
     const totalQuestions = QUIZ_SEED_TOPICS.reduce(
       (sum: number, topic) => sum + topic.questions.length,
       0
     );
-    expect(totalQuestions).toBeGreaterThanOrEqual(52);
+    expect(totalQuestions).toBeGreaterThanOrEqual(160);
   });
 
-  it('ensures each topic has at least 13 questions and balanced difficulty', () => {
+  it('ensures each topic has at least 20 questions and balanced difficulty', () => {
     for (const topic of QUIZ_SEED_TOPICS) {
       expect(topic.name).toBeTruthy();
       expect(topic.description).toBeTruthy();
       expect(topic.colorAccent).toMatch(/^#[0-9A-Fa-f]{6}$/);
       expect(topic.iconName).toBeTruthy();
-      expect(topic.questions.length).toBeGreaterThanOrEqual(13);
+      expect(topic.questions.length).toBeGreaterThanOrEqual(20);
 
       const easyCount = topic.questions.filter((q) => q.difficulty === 'easy').length;
       const mediumCount = topic.questions.filter((q) => q.difficulty === 'medium').length;
       const hardCount = topic.questions.filter((q) => q.difficulty === 'hard').length;
 
-      expect(easyCount).toBeGreaterThanOrEqual(3);
-      expect(mediumCount).toBeGreaterThanOrEqual(3);
-      expect(hardCount).toBeGreaterThanOrEqual(3);
+      expect(easyCount).toBeGreaterThanOrEqual(5);
+      expect(mediumCount).toBeGreaterThanOrEqual(5);
+      expect(hardCount).toBeGreaterThanOrEqual(4);
     }
   });
 

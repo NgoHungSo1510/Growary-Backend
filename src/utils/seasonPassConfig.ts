@@ -166,17 +166,11 @@ const buildEliteTierReward = (level: number, eliteAvatarFrameId: string): PassRe
     return { type: 'xp', amount: 40, label: '40 EXP' };
 };
 
+import { buildCuratedSeasonTiers } from '../seeds/data/seasonPassTiers';
+
 /** Generate the default 80-tier Free and Elite reward ladder (coins sum <= 2,500). */
 export function buildDefaultSeasonTiers(eliteAvatarFrameId: string): SeasonPassTier[] {
-    const tiers: SeasonPassTier[] = [];
-    for (let level = 1; level <= PASS_MAX_LEVEL; level += 1) {
-        tiers.push({
-            level,
-            freeReward: buildFreeTierReward(level),
-            eliteReward: buildEliteTierReward(level, eliteAvatarFrameId),
-        });
-    }
-    return tiers;
+    return buildCuratedSeasonTiers(eliteAvatarFrameId);
 }
 
 type QuestSeedTuple = [

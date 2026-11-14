@@ -6,9 +6,11 @@ dotenv.config();
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/growary';
 
-async function seedAccounts() {
-    await mongoose.connect(MONGODB_URI);
-    console.log('✅ Connected to MongoDB');
+export async function seedAccounts(disconnect = false): Promise<void> {
+    if (mongoose.connection.readyState === 0) {
+        await mongoose.connect(MONGODB_URI);
+        console.log('✅ Connected to MongoDB');
+    }
 
     const db = mongoose.connection.db!;
     const usersCol = db.collection('users');
@@ -71,8 +73,12 @@ async function seedAccounts() {
     );
     console.log('👤 Test user seeded: test@growary.vn / admin123');
 
-    await mongoose.disconnect();
-    console.log('\n✅ Account seed done!');
+    if (disconnect) {
+        await mongoose.disconnect();
+    }
+    console.log('✅ Account seed done!');
 }
 
-seedAccounts().catch(err => { console.error('❌ Seed failed:', err); process.exit(1); });
+if (require.main === module) {
+    seedAccounts(true).catch(err => { console.error('❌ Seed failed:', err); process.exit(1); });
+}

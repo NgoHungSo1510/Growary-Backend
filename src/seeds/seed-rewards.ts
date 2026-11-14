@@ -5,9 +5,11 @@ dotenv.config();
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/growary';
 
-async function seedRewards() {
-    await mongoose.connect(MONGODB_URI);
-    console.log('✅ Connected to MongoDB');
+export async function seedRewards(disconnect = false): Promise<void> {
+    if (mongoose.connection.readyState === 0) {
+        await mongoose.connect(MONGODB_URI);
+        console.log('✅ Connected to MongoDB');
+    }
 
     const db = mongoose.connection.db!;
     const rewardsCol = db.collection('rewards');
@@ -77,8 +79,12 @@ async function seedRewards() {
         console.log(`🎁 ${reward.isActive ? '🏪' : '📦'} ${reward.title} — ${reward.pointCost} coins`);
     }
 
-    await mongoose.disconnect();
-    console.log('\n✅ Reward seed done!');
+    if (disconnect) {
+        await mongoose.disconnect();
+    }
+    console.log('✅ Reward seed done!');
 }
 
-seedRewards().catch(err => { console.error('❌ Seed failed:', err); process.exit(1); });
+if (require.main === module) {
+    seedRewards(true).catch(err => { console.error('❌ Seed failed:', err); process.exit(1); });
+}
