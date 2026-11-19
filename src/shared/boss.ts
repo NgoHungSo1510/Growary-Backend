@@ -2,6 +2,15 @@
 
 export type BossStatus = 'pool' | 'active' | 'completed' | 'upcoming';
 export type MiniGameType = 'random' | 'tap' | 'reflex' | 'quiz' | 'memory';
+export type PlayableMiniGameKey = 'tap' | 'reflex' | 'quiz' | 'memory';
+
+export interface MiniGameCatalogItem {
+    key: PlayableMiniGameKey;
+    name: string;
+    description: string;
+    icon: string;
+    enabled: boolean;
+}
 
 export interface MiniGameQuestion {
     question: string;
@@ -33,6 +42,7 @@ export interface BossEvent {
     loreContent?: string;
     collectionId?: string;
     isLimited?: boolean;
+    defeatedCount?: number;
     miniGameType?: MiniGameType;
     miniGameQuestions?: MiniGameQuestion[];
     createdAt?: string | Date;

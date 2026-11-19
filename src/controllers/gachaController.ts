@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { processLevelUp } from '../services/levelService';
 import * as gachaRevampService from '../services/gachaRevampService';
 import * as seasonPassHooks from '../services/seasonPassHooks';
+import { evaluateUserGachaTierDecay } from '../services/gachaTierService';
 import { GachaItemRarity } from '@shared';
 
 function seededRandom(seed: number) {
@@ -43,7 +44,14 @@ export const getGachaItems = async (
             res.status(404).json({ error: 'User not found' });
             return;
         }
+        await evaluateUserGachaTierDecay(user);
         let items = await GachaItem.find({ isActive: true, tier: user.gachaTier }).lean();
+        if (items.length === 0 && user.gachaTier > 1) {
+            const highestItem = await GachaItem.findOne({ isActive: true }).sort({ tier: -1 }).lean();
+            if (highestItem) {
+                items = await GachaItem.find({ isActive: true, tier: highestItem.tier }).lean();
+            }
+        }
         items = shuffleDaily(items);
         res.json({ items, currentTier: user.gachaTier });
     } catch (error) {
@@ -160,15 +168,26 @@ export const spinGacha = async (
             res.status(404).json({ error: 'User not found' });
             return;
         }
+        await evaluateUserGachaTierDecay(user);
         if (user.gachaTickets < 1) {
             res.status(400).json({ error: 'Not enough gacha tickets' });
             return;
         }
 
-        const availableItems = await GachaItem.find({
+        let availableItems = await GachaItem.find({
             isActive: true,
             tier: user.gachaTier,
         }).populate('rewardId');
+
+        if (availableItems.length === 0 && user.gachaTier > 1) {
+            const highestItem = await GachaItem.findOne({ isActive: true }).sort({ tier: -1 }).lean();
+            if (highestItem) {
+                availableItems = await GachaItem.find({
+                    isActive: true,
+                    tier: highestItem.tier,
+                }).populate('rewardId');
+            }
+        }
 
         if (availableItems.length === 0) {
             res.status(400).json({ error: 'No items available in the gacha pool' });
@@ -222,6 +241,7 @@ export const spinGacha = async (
         let tierUpgraded = false;
         if (selectedItem.rarity === 'legend' && selectedItem.tier === user.gachaTier) {
             user.gachaTier += 1;
+            user.gachaTierEnteredAt = new Date();
             tierUpgraded = true;
         }
 

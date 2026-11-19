@@ -152,17 +152,20 @@ export async function unlockElitePass(userId: string): Promise<SeasonPassActionR
         throw new AppError(404, 'Không tìm thấy người dùng', 'USER_NOT_FOUND');
     }
 
-    const isVipFree = (user.vipTier ?? 0) >= PASS_ELITE_FREE_VIP_TIER;
+    const freeVipTier = season.eliteFreeVipTier ?? PASS_ELITE_FREE_VIP_TIER;
+    const isVipFree = (user.vipTier ?? 0) >= freeVipTier;
     const via: 'vip' | 'coins' = isVipFree ? 'vip' : 'coins';
+    const eliteCost = season.eliteUnlockCost ?? PASS_ELITE_UNLOCK_COST;
+    const bonusXp = season.eliteBonusXp ?? PASS_ELITE_BONUS_XP;
 
     if (!isVipFree) {
         const charged = await User.findOneAndUpdate(
-            { _id: userId, coins: { $gte: PASS_ELITE_UNLOCK_COST } },
+            { _id: userId, coins: { $gte: eliteCost } },
             {
                 $inc: {
-                    coins: -PASS_ELITE_UNLOCK_COST,
-                    totalCoinsSpent: PASS_ELITE_UNLOCK_COST,
-                    monthlySpending: PASS_ELITE_UNLOCK_COST,
+                    coins: -eliteCost,
+                    totalCoinsSpent: eliteCost,
+                    monthlySpending: eliteCost,
                 },
             },
             { new: true }
@@ -172,12 +175,12 @@ export async function unlockElitePass(userId: string): Promise<SeasonPassActionR
                 { _id: locked._id },
                 { $set: { isEliteUnlocked: false }, $unset: { eliteUnlockedAt: 1 } }
             );
-            throw new AppError(400, 'Không đủ 1.500 Xu để mở khóa Sổ Tinh Anh', 'INSUFFICIENT_COINS');
+            throw new AppError(400, `Không đủ ${eliteCost.toLocaleString('vi-VN')} Xu để mở khóa Sổ Tinh Anh`, 'INSUFFICIENT_COINS');
         }
     }
 
     await UserPassProgress.updateOne({ _id: locked._id }, { $set: { eliteUnlockedVia: via } });
-    const afterXp = (await awardPassXp(userId, PASS_ELITE_BONUS_XP)) ?? locked;
+    const afterXp = (await awardPassXp(userId, bonusXp)) ?? locked;
     const frameRes = await grantPassRewards(userId, [
         {
             type: 'avatar_frame',
@@ -317,8 +320,11 @@ export async function withdrawVault(
 ): Promise<SeasonPassActionResponse> {
     const season = await getCurrentSeasonPass(now);
     const progress = await ensureUserPassProgress(userId, season._id);
-    const metrics = calculateLevelMetrics(progress.totalPassXp ?? 0);
-    const check = canWithdrawVaultAt(metrics.currentLevel, new Date(season.endDate), now);
+    const metrics = calculateLevelMetrics(progress.totalPassXp ?? 0, season.tiers);
+    const check = canWithdrawVaultAt(metrics.currentLevel, new Date(season.endDate), now, {
+        withdrawLevel: season.vaultWithdrawLevel,
+        lastDays: season.vaultLastDays,
+    });
 
     if (!check.allowed) {
         throw new AppError(400, check.reason, 'VAULT_LOCKED');

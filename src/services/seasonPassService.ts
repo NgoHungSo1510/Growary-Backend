@@ -8,6 +8,7 @@ import type {
     SeasonPassLeaderboardEntry,
     SeasonPassLeaderboardResponse,
     SeasonPassMyProgressResponse,
+    SeasonPassTier,
     UserPassProgressDTO,
 } from '../shared/seasonPass';
 import { AppError } from '../middleware/errorHandler';
@@ -33,6 +34,12 @@ interface PopulatedPassUser {
 export function toSeasonDTO(doc: ISeasonPass): SeasonPassDTO {
     const startDate = doc.startDate instanceof Date ? doc.startDate.toISOString() : String(doc.startDate);
     const endDate = doc.endDate instanceof Date ? doc.endDate.toISOString() : String(doc.endDate);
+    const tiers = (doc.tiers || []).map((t) => ({
+        level: t.level,
+        xpRequired: t.xpRequired ?? 100,
+        freeReward: t.freeReward,
+        eliteReward: t.eliteReward,
+    }));
     return {
         _id: doc._id.toString(),
         seasonCode: doc.seasonCode,
@@ -44,16 +51,22 @@ export function toSeasonDTO(doc: ISeasonPass): SeasonPassDTO {
         endDate,
         themeColor: doc.themeColor,
         eliteAvatarFrameId: doc.eliteAvatarFrameId,
-        tiers: doc.tiers,
+        tiers,
         quests: doc.quests,
         isSettled: doc.isSettled,
+        eliteUnlockCost: doc.eliteUnlockCost ?? 1500,
+        eliteFreeVipTier: doc.eliteFreeVipTier ?? 4,
+        eliteBonusXp: doc.eliteBonusXp ?? 500,
+        vaultMaxDeposit: doc.vaultMaxDeposit ?? 2000,
+        vaultWithdrawLevel: doc.vaultWithdrawLevel ?? 60,
+        vaultLastDays: doc.vaultLastDays ?? 7,
     };
 }
 
 /** Convert a UserPassProgress document into a DTO with derived level/overcap metrics. */
-export function toProgressDTO(doc: IUserPassProgress): UserPassProgressDTO {
+export function toProgressDTO(doc: IUserPassProgress, tiers?: SeasonPassTier[]): UserPassProgressDTO {
     const totalPassXp = doc.totalPassXp ?? 0;
-    const metrics = calculateLevelMetrics(totalPassXp);
+    const metrics = calculateLevelMetrics(totalPassXp, tiers);
     return {
         ...metrics,
         totalPassXp,
@@ -148,7 +161,7 @@ export async function getMyProgress(
         User.findById(userId).select('vipTier'),
     ]);
 
-    const progress = toProgressDTO(progressDoc);
+    const progress = toProgressDTO(progressDoc, season.tiers);
     const rankInfo = getSeasonRankInfo(progress.currentLevel);
     const states = progressDoc.questStates ?? [];
 
@@ -165,7 +178,10 @@ export async function getMyProgress(
         };
     });
 
-    const vaultCheck = canWithdrawVaultAt(progress.currentLevel, new Date(season.endDate), now);
+    const vaultCheck = canWithdrawVaultAt(progress.currentLevel, new Date(season.endDate), now, {
+        withdrawLevel: season.vaultWithdrawLevel,
+        lastDays: season.vaultLastDays,
+    });
     return {
         season: toSeasonDTO(season),
         progress,

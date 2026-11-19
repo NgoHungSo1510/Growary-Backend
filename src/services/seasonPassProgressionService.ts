@@ -182,6 +182,7 @@ export async function claimQuestReward(
     }
 
     let vaultCoinsAdded = 0;
+    const vaultMaxCap = season.vaultMaxDeposit ?? PASS_VAULT_MAX_DEPOSIT;
     if (questDef.rewardVaultCoins > 0) {
         const beforeDeposit = lockedDoc.vaultDepositedTotal ?? 0;
         const vaultedDoc = await UserPassProgress.findOneAndUpdate(
@@ -197,7 +198,7 @@ export async function claimQuestReward(
                                         questDef.rewardVaultCoins,
                                         {
                                             $subtract: [
-                                                PASS_VAULT_MAX_DEPOSIT,
+                                                vaultMaxCap,
                                                 { $ifNull: ['$vaultDepositedTotal', 0] },
                                             ],
                                         },

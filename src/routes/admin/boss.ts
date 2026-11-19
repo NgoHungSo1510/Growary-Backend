@@ -38,7 +38,12 @@ router.get('/boss', async (_req: AuthRequest, res: Response): Promise<void> => {
 
 router.post('/boss', async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const newBoss = new BossEvent(req.body);
+        const payload = {
+            ...req.body,
+            isLimited: false,
+            miniGameType: 'random',
+        };
+        const newBoss = new BossEvent(payload);
         await newBoss.save();
         res.json({ event: newBoss });
     } catch (error) {
@@ -48,7 +53,12 @@ router.post('/boss', async (req: AuthRequest, res: Response): Promise<void> => {
 
 router.put('/boss/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const updated = await BossEvent.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const payload = {
+            ...req.body,
+            isLimited: false,
+            miniGameType: 'random',
+        };
+        const updated = await BossEvent.findByIdAndUpdate(req.params.id, payload, { new: true });
         res.json({ event: updated });
     } catch (error) {
         res.status(500).json({ error: 'Internal server error' });
@@ -205,6 +215,32 @@ router.post('/boss/:id/upload-avatar', async (req: AuthRequest, res: Response): 
         res.json({ boss });
     } catch (error) {
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Minigame Catalog Management (R7)
+router.get('/boss-minigames', async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { getMiniGameCatalog } = await import('../../services/bossService');
+        const minigames = await getMiniGameCatalog();
+        res.json({ minigames });
+    } catch (error) {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.put('/boss-minigames', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { updateMiniGameCatalog } = await import('../../services/bossService');
+        const enabledKeys = req.body.enabledKeys;
+        if (!Array.isArray(enabledKeys)) {
+            res.status(400).json({ error: 'enabledKeys must be an array' });
+            return;
+        }
+        const minigames = await updateMiniGameCatalog(enabledKeys);
+        res.json({ minigames });
+    } catch (error: any) {
+        res.status(400).json({ error: error.message || 'Failed to update minigames' });
     }
 });
 

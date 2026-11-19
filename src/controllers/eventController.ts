@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { checkWeeklyRotation } from '../services/bossService';
+import { checkWeeklyRotation, getStartOfWeek, getMiniGameCatalog } from '../services/bossService';
 import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
 import { BossCollection, UserBossCollection } from '../models';
@@ -10,11 +10,19 @@ export const getActiveBosses = async (req: AuthRequest, res: Response): Promise<
     try {
         await checkWeeklyRotation(); // Lazy rotation
 
-        const activeBossDocs = await BossEvent.find({ status: 'active' })
-            .populate('collectionId', 'themeColor title iconEmoji');
+        const currentWeekStart = getStartOfWeek();
+        const activeBossDocs = await BossEvent.find({
+            $or: [
+                { status: 'active' },
+                { status: 'completed', weekActivatedAt: { $gte: currentWeekStart } },
+            ],
+        }).populate('collectionId', 'themeColor title iconEmoji');
+
+        const miniGames = await getMiniGameCatalog();
+        const enabledMiniGames = miniGames.filter((g) => g.enabled).map((g) => g.key);
 
         if (activeBossDocs.length === 0) {
-            res.json({ activeBosses: [], userRecords: [] });
+            res.json({ activeBosses: [], userRecords: [], enabledMiniGames });
             return;
         }
 
@@ -36,6 +44,7 @@ export const getActiveBosses = async (req: AuthRequest, res: Response): Promise<
         res.json({
             activeBosses: result.map(r => r.boss),
             userRecords: result.map(r => r.userRecord),
+            enabledMiniGames,
         });
     } catch (error) {
         console.error('Failed to get active bosses:', error);
@@ -117,6 +126,8 @@ export const attackBoss = async (req: AuthRequest, res: Response): Promise<void>
         if (activeBoss.currentHp <= 0) {
             activeBoss.currentHp = 0;
             activeBoss.status = 'completed';
+            activeBoss.defeatedCount = (activeBoss.defeatedCount || 0) + 1;
+            activeBoss.isLimited = false;
         }
         await activeBoss.save();
 
@@ -129,7 +140,13 @@ export const attackBoss = async (req: AuthRequest, res: Response): Promise<void>
         await userRecord.save();
 
         // Đồng bộ điểm bị trừ cho tất cả các BossRecord active khác (Kho điểm dùng chung)
-        const allActiveBosses = await BossEvent.find({ status: 'active', _id: { $ne: activeBoss._id } });
+        const allActiveBosses = await BossEvent.find({
+            $or: [
+                { status: 'active' },
+                { status: 'completed', weekActivatedAt: { $gte: getStartOfWeek() } },
+            ],
+            _id: { $ne: activeBoss._id },
+        });
         if (allActiveBosses.length > 0) {
             const otherBossIds = allActiveBosses.map(b => b._id);
             await BossRecord.updateMany(

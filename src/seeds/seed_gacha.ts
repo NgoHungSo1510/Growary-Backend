@@ -103,7 +103,7 @@ const seedGacha = async () => {
                 tier: 2,
             },
             {
-                name: '✨ Chìa Khóa Tier 3 (Sắp ra mắt)',
+                name: '✨ Chìa Khóa Tier 3 (Đạt đỉnh vĩnh viễn)',
                 type: 'xp',
                 value: 500,
                 rarity: 'legend',
@@ -112,7 +112,50 @@ const seedGacha = async () => {
             }
         ];
 
-        const allItems = [...tier1Items, ...tier2Items].map(item => ({
+        const tier3Items = [
+            {
+                name: '50 Xu',
+                type: 'coins',
+                value: 50,
+                rarity: 'normal',
+                probability: 30,
+                tier: 3,
+            },
+            {
+                name: '50 XP',
+                type: 'xp',
+                value: 50,
+                rarity: 'normal',
+                probability: 30,
+                tier: 3,
+            },
+            {
+                name: '250 Xu Lớn',
+                type: 'coins',
+                value: 250,
+                rarity: 'rare',
+                probability: 20,
+                tier: 3,
+            },
+            {
+                name: '5 Vé Quay',
+                type: 'tickets',
+                value: 5,
+                rarity: 'epic',
+                probability: 15,
+                tier: 3,
+            },
+            {
+                name: '👑 Vương Miện Thần Thoại Tier 3',
+                type: 'xp',
+                value: 1000,
+                rarity: 'legend',
+                probability: 5,
+                tier: 3,
+            },
+        ];
+
+        const allItems = [...tier1Items, ...tier2Items, ...tier3Items].map(item => ({
             ...item,
             isActive: true,
             createdBy: adminUser._id

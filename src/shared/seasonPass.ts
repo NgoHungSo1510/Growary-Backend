@@ -36,6 +36,7 @@ export interface PassReward {
 
 export interface SeasonPassTier {
     level: number;
+    xpRequired?: number; // Mặc định 100 Pass XP nếu không chỉ định (R8)
     freeReward: PassReward | null;
     eliteReward: PassReward | null;
 }
@@ -70,6 +71,17 @@ export interface PassLevelMetrics {
     overflowChestsEarned: number;
 }
 
+export interface SeasonPassConfigPatch {
+    title?: string;
+    eliteUnlockCost?: number;      // Mặc định 1500 Xu
+    eliteFreeVipTier?: number;     // Mặc định VIP 4
+    eliteBonusXp?: number;         // Mặc định 500 Pass XP
+    vaultMaxDeposit?: number;      // Mặc định 2000 Xu/mùa
+    vaultWithdrawLevel?: number;   // Mặc định Cấp 60
+    vaultLastDays?: number;        // Mặc định 7 ngày cuối mùa
+    defaultXpPerLevel?: number;    // Tùy chọn: áp dụng đồng loạt xpRequired cho mọi cấp
+}
+
 export interface SeasonPassDTO {
     _id: string;
     seasonCode: string;
@@ -84,6 +96,12 @@ export interface SeasonPassDTO {
     tiers: SeasonPassTier[];
     quests: PassQuestDefinition[];
     isSettled: boolean;
+    eliteUnlockCost?: number;
+    eliteFreeVipTier?: number;
+    eliteBonusXp?: number;
+    vaultMaxDeposit?: number;
+    vaultWithdrawLevel?: number;
+    vaultLastDays?: number;
 }
 
 export interface UserQuestStateDTO {
@@ -174,6 +192,7 @@ export interface EquipAvatarFramePayload {
 }
 
 export interface AdminUpdateTierPayload {
+    xpRequired?: number;
     freeReward: PassReward | null;
     eliteReward: PassReward | null;
 }

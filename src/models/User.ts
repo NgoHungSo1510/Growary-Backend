@@ -17,6 +17,7 @@ export interface IUser extends Document {
     xp: number;
     level: number;
     gachaTier: number;
+    gachaTierEnteredAt?: Date;
     currentPoints: number;
     totalPointsEarned: number;
     currentStreak: number;
@@ -128,6 +129,10 @@ const UserSchema = new Schema<IUser>(
         gachaTier: {
             type: Number,
             default: 1,
+        },
+        gachaTierEnteredAt: {
+            type: Date,
+            default: Date.now,
         },
         currentPoints: {
             type: Number,

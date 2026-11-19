@@ -11,6 +11,7 @@ jest.mock('../../models', () => {
     return {
         GachaWeeklyEvent: {
             findOne: jest.fn(),
+            findOneAndUpdate: jest.fn(),
         },
         GachaLeaderboard: {
             find: jest.fn(),
@@ -20,12 +21,21 @@ jest.mock('../../models', () => {
         },
         UserInventory: {
             findOne: jest.fn(),
+            findOneAndUpdate: jest.fn().mockResolvedValue({}),
+            updateOne: jest.fn().mockResolvedValue({}),
         },
         MysteryBox: {
             findOne: jest.fn(),
         },
         Notification: {
             create: jest.fn(),
+        },
+        Level: {
+            find: jest.fn().mockReturnValue({
+                sort: jest.fn().mockReturnValue({
+                    populate: jest.fn().mockResolvedValue([]),
+                }),
+            }),
         },
     };
 });
@@ -44,6 +54,7 @@ describe('gachaWeeklyJob', () => {
     });
 
     it('should return event_not_found if no active event exists for target week', async () => {
+        (GachaWeeklyEvent.findOneAndUpdate as jest.Mock).mockResolvedValueOnce(null);
         (GachaWeeklyEvent.findOne as jest.Mock).mockResolvedValueOnce(null);
 
         const result = await distributeWeeklyGachaRewards('2026-10-12');
@@ -52,6 +63,7 @@ describe('gachaWeeklyJob', () => {
     });
 
     it('should return already_distributed if event was previously distributed', async () => {
+        (GachaWeeklyEvent.findOneAndUpdate as jest.Mock).mockResolvedValueOnce(null);
         const mockEvent = {
             weekStart: '2026-10-12',
             isDistributed: true,
@@ -66,7 +78,7 @@ describe('gachaWeeklyJob', () => {
     it('should handle week with zero leaderboard entries gracefully', async () => {
         const mockEvent = {
             weekStart: '2026-10-12',
-            isDistributed: false,
+            isDistributed: true,
             weeklyRewards: {
                 top1: { box: { name: 'Box 1' }, coins: 1500, xp: 500, tickets: 3 },
                 top2: { box: { name: 'Box 2' }, coins: 1000, xp: 250, tickets: 1 },
@@ -74,7 +86,7 @@ describe('gachaWeeklyJob', () => {
             },
             save: jest.fn().mockResolvedValue(true),
         };
-        (GachaWeeklyEvent.findOne as jest.Mock).mockResolvedValueOnce(mockEvent);
+        (GachaWeeklyEvent.findOneAndUpdate as jest.Mock).mockResolvedValueOnce(mockEvent);
 
         const mockFindChain = {
             sort: jest.fn().mockReturnThis(),
@@ -86,13 +98,12 @@ describe('gachaWeeklyJob', () => {
         expect(result.success).toBe(true);
         expect(result.distributedCount).toBe(0);
         expect(mockEvent.isDistributed).toBe(true);
-        expect(mockEvent.save).toHaveBeenCalled();
     });
 
     it('should award Top 1, 2, 3 users with coins, XP, tickets, box and notifications', async () => {
         const mockEvent = {
             weekStart: '2026-10-12',
-            isDistributed: false,
+            isDistributed: true,
             weeklyRewards: {
                 top1: {
                     box: { boxId: 'box-top-1', name: 'Rương Sử Thi', rarity: 'epic' },
@@ -115,7 +126,7 @@ describe('gachaWeeklyJob', () => {
             },
             save: jest.fn().mockResolvedValue(true),
         };
-        (GachaWeeklyEvent.findOne as jest.Mock).mockResolvedValueOnce(mockEvent);
+        (GachaWeeklyEvent.findOneAndUpdate as jest.Mock).mockResolvedValueOnce(mockEvent);
 
         const mockEntries = [
             { userId: 'u1', totalScore: 350 },
@@ -170,7 +181,6 @@ describe('gachaWeeklyJob', () => {
         expect(result.success).toBe(true);
         expect(result.distributedCount).toBe(3);
         expect(mockEvent.isDistributed).toBe(true);
-        expect(mockEvent.save).toHaveBeenCalled();
 
         // Check user 1 received Top 1 reward
         expect(mockUser1.coins).toBe(100 + 1500);

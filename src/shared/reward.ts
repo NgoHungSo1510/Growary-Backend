@@ -59,6 +59,7 @@ export interface InventoryItem {
     rewardForm?: 'full' | 'fragment' | string;
     rarity?: string;
     type?: string;
+    imageUrl?: string;
     requiredFragments?: number;
     specialItem?: {
         _id?: string;

@@ -4,6 +4,75 @@ import { processLevelUp } from './levelService';
 import * as seasonPassHooks from './seasonPassHooks';
 import { v4 as uuidv4 } from 'uuid';
 import { VOUCHER_EXPIRY_DAYS, getStartOfDay } from '../constants';
+import { PlayableMiniGameKey, MiniGameCatalogItem } from '../shared/boss';
+
+export const DEFAULT_MINIGAME_CATALOG: MiniGameCatalogItem[] = [
+    {
+        key: 'tap',
+        name: 'Bấm Liên Tục (Tap Rush)',
+        description: 'Chạm nhanh để tích lũy sát thương phá khóa',
+        icon: 'gesture-tap',
+        enabled: true,
+    },
+    {
+        key: 'reflex',
+        name: 'Căn Tâm Phản Xạ (Reflex Timing)',
+        description: 'Dừng thanh chạy đúng vùng tâm để gây sát thương chuẩn xác',
+        icon: 'target',
+        enabled: true,
+    },
+    {
+        key: 'quiz',
+        name: 'Giải Đố Nhanh (Quick Quiz)',
+        description: 'Trả lời nhanh câu hỏi kiến thức của nhân vật để đánh đòn chí mạng',
+        icon: 'help-circle-outline',
+        enabled: true,
+    },
+    {
+        key: 'memory',
+        name: 'Lật Thẻ Trí Nhớ (Memory Cards)',
+        description: 'Lật tìm các cặp thẻ tương ứng để giải phóng ấn chú',
+        icon: 'cards-outline',
+        enabled: true,
+    },
+];
+
+/**
+ * Lấy danh mục các minigame Boss và trạng thái bật/tắt từ cấu hình hệ thống
+ * @returns Danh sách minigame kèm trạng thái enabled
+ */
+export async function getMiniGameCatalog(): Promise<MiniGameCatalogItem[]> {
+    const config = await SystemConfig.findOne({ key: 'boss_minigames_config' });
+    if (!config || !Array.isArray(config.value)) {
+        return DEFAULT_MINIGAME_CATALOG;
+    }
+    const savedKeys = config.value as PlayableMiniGameKey[];
+    return DEFAULT_MINIGAME_CATALOG.map((item) => ({
+        ...item,
+        enabled: savedKeys.includes(item.key),
+    }));
+}
+
+/**
+ * Cập nhật danh sách các minigame được kích hoạt
+ * @param enabledKeys - Danh sách key minigame được bật
+ * @returns Danh mục minigame sau khi cập nhật
+ */
+export async function updateMiniGameCatalog(
+    enabledKeys: PlayableMiniGameKey[]
+): Promise<MiniGameCatalogItem[]> {
+    const validKeys: PlayableMiniGameKey[] = ['tap', 'reflex', 'quiz', 'memory'];
+    const filtered = enabledKeys.filter((k) => validKeys.includes(k));
+    if (filtered.length === 0) {
+        throw new Error('At least one minigame must remain enabled');
+    }
+    await SystemConfig.findOneAndUpdate(
+        { key: 'boss_minigames_config' },
+        { value: filtered },
+        { upsert: true, new: true }
+    );
+    return getMiniGameCatalog();
+}
 
 export const distributeBossRewards = async (bossId: string) => {
     try {
@@ -212,18 +281,25 @@ export const checkWeeklyRotation = async (): Promise<void> => {
 };
 
 export const performWeeklyRotation = async (weekStart: Date): Promise<void> => {
-    // BƯỚC 1: Kết thúc 2 boss đang active — chuyển tất cả về pool
-    const activeBosses = await BossEvent.find({ status: 'active' });
+    // BƯỚC 1: Kết thúc boss của tuần vừa qua (cả active lẫn completed) — chuyển tất cả về pool (R6, R7)
+    const currentWeekBosses = await BossEvent.find({
+        $or: [
+            { status: 'active' },
+            { status: 'completed', weekActivatedAt: { $ne: null } },
+        ],
+    });
 
-    for (const boss of activeBosses) {
+    for (const boss of currentWeekBosses) {
         if (boss.currentHp <= 0) {
-            // Boss đã bị tiêu diệt tuần này → về pool, reset HP
+            // Boss đã bị tiêu diệt tuần này → về pool, reset HP, tăng defeatedCount, bỏ limited
             boss.status = 'pool';
             boss.currentHp = boss.maxHp;
+            boss.defeatedCount = (boss.defeatedCount || 0) + 1;
+            boss.isLimited = false;
             boss.isRewardDistributed = false;
             boss.weekActivatedAt = undefined;
             await boss.save();
-            console.log(`  ✅ "${boss.title}" was completed — reset to pool.`);
+            console.log(`  ✅ "${boss.title}" was completed — reset to pool (defeatedCount: ${boss.defeatedCount}).`);
         } else {
             // Boss chưa bị tiêu diệt → về pool, tăng timesReturned
             boss.status = 'pool';
@@ -236,10 +312,10 @@ export const performWeeklyRotation = async (weekStart: Date): Promise<void> => {
         }
     }
 
-    // Helper: bốc N boss từ pool (loại trừ boss đang upcoming)
+    // Helper: bốc N boss từ pool, ưu tiên boss chưa từng bị đánh bại (defeatedCount: 0) trước (R7)
     const pickFromPool = async (count: number) => {
         if (count <= 0) return [];
-        const pool = await BossEvent.find({ status: 'pool' }).sort({ timesReturned: 1 });
+        const pool = await BossEvent.find({ status: 'pool' }).sort({ defeatedCount: 1, timesReturned: 1 });
         if (pool.length === 0) return [];
         const minReturns = pool[0].timesReturned;
         const lowestTier = pool.filter(b => b.timesReturned === minReturns);

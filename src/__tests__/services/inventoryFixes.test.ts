@@ -184,10 +184,12 @@ describe('Inventory Fixes & Coupon Voucher Re-use Spam Prevention (Task 1)', () 
                     const matchSpecial =
                         !cond.specialItem ||
                         i.specialItem?.toString() === cond.specialItem.toString();
+                    const matchForm =
+                        !cond.rewardForm || i.rewardForm === cond.rewardForm;
                     const matchQty =
                         !cond.quantity ||
                         (cond.quantity.$gt !== undefined ? i.quantity > cond.quantity.$gt : true);
-                    return matchType && matchSpecial && matchQty;
+                    return matchType && matchSpecial && matchForm && matchQty;
                 });
 
                 if (idx === -1) return null;
@@ -240,18 +242,134 @@ describe('Inventory Fixes & Coupon Voucher Re-use Spam Prevention (Task 1)', () 
                     const matchSpecial =
                         !pullCond.specialItem ||
                         i.specialItem?.toString() === pullCond.specialItem.toString();
+                    const matchForm =
+                        !pullCond.rewardForm || i.rewardForm === pullCond.rewardForm;
                     const matchQty =
                         !pullCond.quantity ||
                         (pullCond.quantity.$lte !== undefined
                             ? i.quantity <= pullCond.quantity.$lte
                             : true);
-                    return !(matchType && matchSpecial && matchQty);
+                    return !(matchType && matchSpecial && matchForm && matchQty);
                 });
             }
             if (update?.$push?.items) {
                 inventoryItems.push(update.$push.items);
             }
             return Promise.resolve({ acknowledged: true, modifiedCount: 1 });
+        });
+    });
+
+    describe('Task 2 V2.6.4: Strict rewardForm full requirement and gross VIP spending (R2 & R3)', () => {
+        it('R2a: should reject purchase and not touch fragments when user only has fragments', async () => {
+            // User only has 5 fragments, 0 full tickets
+            inventoryItems = [
+                {
+                    itemType: 'special_item',
+                    specialItem: couponSpecialItemId,
+                    rewardForm: 'fragment',
+                    quantity: 5,
+                    lastUpdated: new Date(),
+                },
+            ];
+
+            await expect(
+                purchaseRewardItem(testUserId, testRewardId, {
+                    couponType: 'coupon_freeship',
+                })
+            ).rejects.toThrow(/do not have enough/i);
+
+            // Fragments must remain 5
+            expect(inventoryItems[0].quantity).toBe(5);
+        });
+
+        it('R2b: should only deduct rewardForm: full and keep fragments intact when both exist', async () => {
+            // User has 5 fragments at index 0 and 1 full ticket at index 1
+            inventoryItems = [
+                {
+                    itemType: 'special_item',
+                    specialItem: couponSpecialItemId,
+                    rewardForm: 'fragment',
+                    quantity: 5,
+                    lastUpdated: new Date(),
+                },
+                {
+                    itemType: 'special_item',
+                    specialItem: couponSpecialItemId,
+                    rewardForm: 'full',
+                    quantity: 1,
+                    lastUpdated: new Date(),
+                },
+            ];
+
+            const result = await purchaseRewardItem(testUserId, testRewardId, {
+                couponType: 'coupon_freeship',
+            });
+
+            expect(result).toBeDefined();
+            // Fragment item at index 0 must be untouched with quantity 5
+            const fragmentItem = inventoryItems.find(
+                (i) => i.specialItem?.toString() === couponSpecialItemId && i.rewardForm === 'fragment'
+            );
+            expect(fragmentItem).toBeDefined();
+            expect(fragmentItem?.quantity).toBe(5);
+
+            // Full ticket must have been consumed
+            const fullItem = inventoryItems.find(
+                (i) => i.specialItem?.toString() === couponSpecialItemId && i.rewardForm === 'full'
+            );
+            expect(fullItem).toBeUndefined();
+        });
+
+        it('R3: should record gross spending for VIP tiers before user coupon discount', async () => {
+            inventoryItems = [
+                {
+                    itemType: 'special_item',
+                    specialItem: couponSpecialItemId,
+                    rewardForm: 'full',
+                    quantity: 1,
+                    lastUpdated: new Date(),
+                },
+            ];
+
+            // Setup 5k discount coupon
+            const mock5kDiscountCoupon = {
+                _id: new Types.ObjectId(couponSpecialItemId),
+                type: 'coupon_discount_5k',
+                name: 'Phiếu Giảm Giá 5K',
+                isFragmentable: false,
+                requiredFragments: 10,
+                isActive: true,
+            };
+            (SpecialItem.findOne as jest.Mock).mockResolvedValue(mock5kDiscountCoupon);
+
+            // Reward costs 15000, shipping 0
+            (Reward.findById as jest.Mock).mockResolvedValue({
+                _id: testRewardId,
+                title: 'Test Physical Reward',
+                pointCost: 15000,
+                shippingFee: 0,
+                stock: 10,
+                isActive: true,
+            });
+
+            await purchaseRewardItem(testUserId, testRewardId, {
+                couponType: 'coupon_discount_5k',
+            });
+
+            // actualPrice = 15000 - 5000 = 10000
+            // grossSpendingForVip = 15000 (effectiveBasePrice 15000 + shippingFee 0)
+            expect(User.findOneAndUpdate).toHaveBeenCalledWith(
+                { _id: testUserId, coins: { $gte: 10000 } },
+                expect.objectContaining({
+                    $inc: expect.objectContaining({
+                        coins: -10000,
+                        currentPoints: -10000,
+                        totalCoinsSpent: 15000,
+                        monthlySpending: 15000,
+                    }),
+                }),
+                { new: true }
+            );
         });
     });
 

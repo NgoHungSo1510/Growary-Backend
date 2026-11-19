@@ -199,4 +199,50 @@ router.post('/inventory/grant', async (req: AuthRequest, res: Response): Promise
     }
 });
 
+router.post('/inventory/revoke', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { userId, itemType, specialItem, mysteryBox, itemId, rewardForm, quantity, reason } = req.body;
+        if (!userId || !itemType || !quantity || quantity <= 0) {
+            res.status(400).json({ error: 'Invalid parameters' }); return;
+        }
+
+        const inventory = await UserInventory.findOne({ user: userId });
+        if (!inventory) {
+            res.status(404).json({ error: 'User inventory not found' }); return;
+        }
+
+        const targetId = (specialItem || mysteryBox || itemId)?.toString();
+        let itemIndex = -1;
+        if (itemType === 'special_item') {
+            itemIndex = inventory.items.findIndex(
+                i => i.itemType === 'special_item' &&
+                     i.specialItem?.toString() === targetId &&
+                     (rewardForm ? i.rewardForm === rewardForm : true)
+            );
+        } else if (itemType === 'mystery_box') {
+            itemIndex = inventory.items.findIndex(
+                i => i.itemType === 'mystery_box' && i.mysteryBox?.toString() === targetId
+            );
+        }
+
+        if (itemIndex < 0) {
+            res.status(404).json({ error: 'Item not found in user inventory' }); return;
+        }
+
+        inventory.items[itemIndex].quantity -= quantity;
+        if (inventory.items[itemIndex].quantity <= 0) {
+            inventory.items.splice(itemIndex, 1);
+        } else {
+            inventory.items[itemIndex].lastUpdated = new Date();
+        }
+
+        await inventory.save();
+        console.log(`Admin ${req.userId} revoked ${quantity} ${itemType} from user ${userId}. Reason: ${reason}`);
+        res.json({ message: 'Revoked successfully', inventory });
+    } catch (error) {
+        console.error('Inventory revoke error:', error);
+        res.status(500).json({ error: 'Failed to revoke item' });
+    }
+});
+
 export default router;

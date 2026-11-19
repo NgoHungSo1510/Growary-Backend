@@ -36,6 +36,7 @@ const rollbackDeductedCoupons = async (userId: string, coupons: ISpecialItem[]):
                     $elemMatch: {
                         itemType: 'special_item',
                         specialItem: item._id,
+                        rewardForm: 'full',
                     },
                 },
             },
@@ -110,6 +111,7 @@ export const purchaseRewardItem = async (
                     $elemMatch: {
                         itemType: 'special_item',
                         specialItem: spItem._id,
+                        rewardForm: 'full',
                         quantity: { $gt: 0 },
                     },
                 },
@@ -131,6 +133,7 @@ export const purchaseRewardItem = async (
                     items: {
                         itemType: 'special_item',
                         specialItem: spItem._id,
+                        rewardForm: 'full',
                         quantity: { $lte: 0 },
                     },
                 },
@@ -167,6 +170,8 @@ export const purchaseRewardItem = async (
     const discountedShipping = Math.max(0, shippingFee - appliedShippingDiscount);
     const discountedProduct = Math.max(0, effectiveBasePrice - appliedProductDiscount);
     const actualPrice = discountedProduct + discountedShipping;
+    // Giá trị chi tiêu tính cho hạng VIP = giá sau Flash Sale + phí ship (trước khi trừ Voucher/Coupon của user — R3)
+    const grossSpendingForVip = Math.max(actualPrice, effectiveBasePrice + shippingFee);
 
     // Atomic stock decrement
     if (reward.stock !== undefined && reward.stock !== null) {
@@ -190,9 +195,9 @@ export const purchaseRewardItem = async (
         {
             $inc: {
                 coins: -actualPrice,
-                totalCoinsSpent: actualPrice > 0 ? actualPrice : 0,
+                totalCoinsSpent: grossSpendingForVip > 0 ? grossSpendingForVip : 0,
                 currentPoints: -actualPrice,
-                monthlySpending: actualPrice > 0 ? actualPrice : 0,
+                monthlySpending: grossSpendingForVip > 0 ? grossSpendingForVip : 0,
                 pendingCashback: await calcCashback(actualPrice, currentUser.vipTier)
             }
         },

@@ -105,19 +105,76 @@ export function getPeriodKey(
 }
 
 /** Purely derive level, XP progress, overcap XP, and earned overcap chests from `totalPassXp`. */
-export function calculateLevelMetrics(totalPassXp: number): PassLevelMetrics {
+export function calculateLevelMetrics(
+    totalPassXp: number,
+    tiers?: SeasonPassTier[]
+): PassLevelMetrics {
     const safeXp = Math.max(0, Math.floor(totalPassXp));
-    const currentLevel = Math.floor(safeXp / PASS_XP_PER_LEVEL) + 1;
-    const currentLevelXp = safeXp % PASS_XP_PER_LEVEL;
-    const overcapXp = Math.max(0, safeXp - (PASS_MAX_LEVEL - 1) * PASS_XP_PER_LEVEL);
+
+    if (!tiers || tiers.length === 0) {
+        const currentLevel = Math.floor(safeXp / PASS_XP_PER_LEVEL) + 1;
+        const currentLevelXp = safeXp % PASS_XP_PER_LEVEL;
+        const overcapXp = Math.max(0, safeXp - (PASS_MAX_LEVEL - 1) * PASS_XP_PER_LEVEL);
+        const overflowChestsEarned = Math.min(
+            PASS_OVERCAP_MAX_CHESTS,
+            Math.floor(overcapXp / PASS_OVERCAP_XP_PER_CHEST)
+        );
+        return {
+            currentLevel,
+            currentLevelXp,
+            xpForNextLevel: PASS_XP_PER_LEVEL,
+            overcapXp,
+            overflowChestsEarned,
+        };
+    }
+
+    const sortedTiers = [...tiers].sort((a, b) => a.level - b.level);
+    let remainingXp = safeXp;
+    let currentLevel = 1;
+    let currentLevelXp = 0;
+    let xpForNextLevel = sortedTiers[0]?.xpRequired ?? PASS_XP_PER_LEVEL;
+
+    for (let i = 0; i < sortedTiers.length; i++) {
+        const tier = sortedTiers[i];
+        const req = tier.xpRequired ?? PASS_XP_PER_LEVEL;
+
+        if (i === sortedTiers.length - 1) {
+            if (remainingXp >= req) {
+                currentLevel = tier.level + 1;
+                currentLevelXp = remainingXp - req;
+                xpForNextLevel = req;
+            } else {
+                currentLevel = tier.level;
+                currentLevelXp = remainingXp;
+                xpForNextLevel = req;
+            }
+            break;
+        }
+
+        if (remainingXp >= req) {
+            remainingXp -= req;
+            currentLevel = tier.level + 1;
+            const nextTier = sortedTiers[i + 1];
+            xpForNextLevel = nextTier?.xpRequired ?? PASS_XP_PER_LEVEL;
+        } else {
+            currentLevel = tier.level;
+            currentLevelXp = remainingXp;
+            xpForNextLevel = req;
+            break;
+        }
+    }
+
+    const totalReqToMax = sortedTiers.slice(0, sortedTiers.length - 1).reduce((sum, t) => sum + (t.xpRequired ?? PASS_XP_PER_LEVEL), 0);
+    const overcapXp = Math.max(0, safeXp - totalReqToMax);
     const overflowChestsEarned = Math.min(
         PASS_OVERCAP_MAX_CHESTS,
         Math.floor(overcapXp / PASS_OVERCAP_XP_PER_CHEST)
     );
+
     return {
         currentLevel,
         currentLevelXp,
-        xpForNextLevel: PASS_XP_PER_LEVEL,
+        xpForNextLevel,
         overcapXp,
         overflowChestsEarned,
     };
@@ -202,18 +259,22 @@ export function buildDefaultSeasonQuests(): PassQuestDefinition[] {
 export function canWithdrawVaultAt(
     currentLevel: number,
     endDate: Date,
-    now: Date = new Date()
+    now: Date = new Date(),
+    options?: { withdrawLevel?: number; lastDays?: number }
 ): { allowed: boolean; reason: string } {
-    if (currentLevel >= PASS_VAULT_WITHDRAW_LEVEL) {
-        return { allowed: true, reason: `Đã mở khóa tại Cấp ${PASS_VAULT_WITHDRAW_LEVEL}` };
+    const withdrawLevel = options?.withdrawLevel ?? PASS_VAULT_WITHDRAW_LEVEL;
+    const lastDays = options?.lastDays ?? PASS_VAULT_LAST_DAYS;
+
+    if (currentLevel >= withdrawLevel) {
+        return { allowed: true, reason: `Đã mở khóa tại Cấp ${withdrawLevel}` };
     }
     const msRemaining = endDate.getTime() - now.getTime();
-    if (msRemaining <= PASS_VAULT_LAST_DAYS * DAY_MS) {
-        return { allowed: true, reason: `Đã mở khóa trong ${PASS_VAULT_LAST_DAYS} ngày cuối mùa` };
+    if (msRemaining <= lastDays * DAY_MS) {
+        return { allowed: true, reason: `Đã mở khóa trong ${lastDays} ngày cuối mùa` };
     }
     return {
         allowed: false,
-        reason: `Đạt Cấp ${PASS_VAULT_WITHDRAW_LEVEL} hoặc chờ ${PASS_VAULT_LAST_DAYS} ngày cuối mùa để rút Két Sắt`,
+        reason: `Đạt Cấp ${withdrawLevel} hoặc chờ ${lastDays} ngày cuối mùa để rút Két Sắt`,
     };
 }
 

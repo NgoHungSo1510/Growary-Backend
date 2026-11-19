@@ -9,6 +9,8 @@ import {
     IWeeklyRewardTier,
 } from '../models';
 import { getCurrentWeekRange, generateWeeklyRewards } from '../services/gachaRevampService';
+import { mapGachaRarityToBoxRarity } from '../services/gachaTierService';
+import { processLevelUp } from '../services/levelService';
 
 export interface DistributeResult {
     success: boolean;
@@ -33,24 +35,29 @@ export interface DistributeResult {
  */
 export async function distributeWeeklyGachaRewards(targetWeekStart?: string): Promise<DistributeResult> {
     const weekStart = targetWeekStart || getCurrentWeekRange().weekStart;
-    console.log(`🏆 [GachaWeeklyJob] Bắt đầu xử lý trao thưởng đua top tuần: ${weekStart}`);
 
     try {
-        const event = await GachaWeeklyEvent.findOne({ weekStart, isActive: true });
-        if (!event) {
-            console.log(`ℹ️ [GachaWeeklyJob] Không tìm thấy sự kiện Gacha tuần ${weekStart}`);
-            return { success: false, reason: 'event_not_found', weekStart };
-        }
+        // Atomic lock to guarantee single distribution (idempotency)
+        const event = await GachaWeeklyEvent.findOneAndUpdate(
+            { weekStart, isDistributed: { $ne: true } },
+            { $set: { isDistributed: true, distributedAt: new Date() } },
+            { new: true }
+        );
 
-        if (event.isDistributed) {
-            console.log(`ℹ️ [GachaWeeklyJob] Sự kiện Gacha tuần ${weekStart} đã được trao thưởng trước đó`);
-            return { success: true, reason: 'already_distributed', weekStart };
+        if (!event) {
+            const existing = await GachaWeeklyEvent.findOne({ weekStart });
+            if (existing && existing.isDistributed) {
+                return { success: true, reason: 'already_distributed', weekStart };
+            }
+            return { success: false, reason: 'event_not_found', weekStart };
         }
 
         const weeklyRewards = event.weeklyRewards || (await generateWeeklyRewards());
         if (!event.weeklyRewards) {
             event.weeklyRewards = weeklyRewards;
-            await event.save();
+            if (typeof event.save === 'function') {
+                await event.save();
+            }
         }
 
         const topEntries = await GachaLeaderboard.find({ weekStart })
@@ -58,10 +65,6 @@ export async function distributeWeeklyGachaRewards(targetWeekStart?: string): Pr
             .limit(3);
 
         if (topEntries.length === 0) {
-            console.log(`ℹ️ [GachaWeeklyJob] Tuần ${weekStart} không có người chơi nào ghi điểm`);
-            event.isDistributed = true;
-            event.distributedAt = new Date();
-            await event.save();
             return { success: true, distributedCount: 0, weekStart };
         }
 
@@ -83,57 +86,61 @@ export async function distributeWeeklyGachaRewards(targetWeekStart?: string): Pr
             const user = await User.findById(entry.userId);
             if (!user) continue;
 
-            // 1. Cộng Coin, XP, Vé Gacha
+            // 1. Cộng Coin, XP/Points, Vé Gacha (R4)
             user.coins = (user.coins || 0) + (rewardTier.coins || 0);
-            user.xp = (user.xp || 0) + (rewardTier.xp || 0);
+            const xpToAdd = rewardTier.xp || 0;
+            user.currentPoints = (user.currentPoints || 0) + xpToAdd;
+            user.totalPointsEarned = (user.totalPointsEarned || 0) + xpToAdd;
             user.gachaTickets = (user.gachaTickets || 0) + (rewardTier.tickets || 0);
+            if (xpToAdd > 0) {
+                await processLevelUp(user, xpToAdd);
+            }
             await user.save();
 
-            // 2. Thêm Mystery Box vào UserInventory
+            // 2. Thêm Mystery Box vào UserInventory (chuẩn hóa độ hiếm & fallback - R4)
             let boxIdToGrant = rewardTier.box?.boxId;
-            if (!boxIdToGrant && rewardTier.box?.rarity) {
+            if (!boxIdToGrant) {
+                const mappedRarity = mapGachaRarityToBoxRarity(rewardTier.box?.rarity);
                 const fallbackBox = await MysteryBox.findOne({
                     isActive: true,
-                    rarity: rewardTier.box.rarity,
+                    rarity: mappedRarity,
                 });
                 if (fallbackBox) {
                     boxIdToGrant = fallbackBox._id;
+                } else {
+                    const anyBox = await MysteryBox.findOne({ isActive: true });
+                    if (anyBox) {
+                        boxIdToGrant = anyBox._id;
+                    }
                 }
             }
 
             if (boxIdToGrant) {
-                let userInv = await UserInventory.findOne({ user: user._id });
-                if (!userInv) {
-                    userInv = new UserInventory({
-                        user: user._id,
-                        items: [
-                            {
-                                itemType: 'mystery_box',
-                                mysteryBox: boxIdToGrant,
-                                quantity: 1,
-                                lastUpdated: new Date(),
-                            },
-                        ],
-                    });
-                } else {
-                    const existingIdx = userInv.items.findIndex(
-                        (it) =>
-                            it.itemType === 'mystery_box' &&
-                            it.mysteryBox?.toString() === boxIdToGrant?.toString()
-                    );
-                    if (existingIdx !== -1) {
-                        userInv.items[existingIdx].quantity += 1;
-                        userInv.items[existingIdx].lastUpdated = new Date();
-                    } else {
-                        userInv.items.push({
-                            itemType: 'mystery_box',
-                            mysteryBox: boxIdToGrant,
-                            quantity: 1,
-                            lastUpdated: new Date(),
-                        });
+                const updateRes = await UserInventory.findOneAndUpdate(
+                    { user: user._id, 'items.mysteryBox': boxIdToGrant },
+                    {
+                        $inc: { 'items.$.quantity': 1 },
+                        $set: { 'items.$.lastUpdated': new Date() },
                     }
+                );
+
+                if (!updateRes) {
+                    await UserInventory.findOneAndUpdate(
+                        { user: user._id },
+                        {
+                            $push: {
+                                items: {
+                                    itemType: 'mystery_box',
+                                    mysteryBox: boxIdToGrant,
+                                    quantity: 1,
+                                    lastUpdated: new Date(),
+                                },
+                            },
+                            $setOnInsert: { user: user._id },
+                        },
+                        { upsert: true }
+                    );
                 }
-                await userInv.save();
             }
 
             // 3. Gửi Thông Báo Hệ Thống
@@ -151,16 +158,8 @@ export async function distributeWeeklyGachaRewards(targetWeekStart?: string): Pr
                 score: entry.totalScore,
                 rewardBoxName: rewardTier.box?.name,
             });
-
-            console.log(`✅ [GachaWeeklyJob] Đã trao thưởng Top ${rank} cho user ${user.username} (${user._id})`);
         }
 
-        // Đánh dấu hoàn tất trao giải
-        event.isDistributed = true;
-        event.distributedAt = new Date();
-        await event.save();
-
-        console.log(`🎉 [GachaWeeklyJob] Hoàn thành trao thưởng tuần ${weekStart} cho ${winners.length} người chơi`);
         return {
             success: true,
             weekStart,
@@ -171,6 +170,32 @@ export async function distributeWeeklyGachaRewards(targetWeekStart?: string): Pr
         console.error('❌ [GachaWeeklyJob] Lỗi khi trao thưởng gacha tuần:', error);
         throw error;
     }
+}
+
+/**
+ * Tự động quyết toán tất cả các tuần Gacha cũ chưa được trao thưởng (Lazy Settlement).
+ * @param now - Thời điểm hiện tại
+ * @returns Số tuần đã được quyết toán
+ */
+export async function settlePendingWeeklyGachaEvents(now: Date = new Date()): Promise<number> {
+    const currentWeekStart = getCurrentWeekRange(now).weekStart;
+    const pendingEvents = await GachaWeeklyEvent.find({
+        weekStart: { $lt: currentWeekStart },
+        isDistributed: { $ne: true },
+    });
+
+    let settledCount = 0;
+    for (const ev of pendingEvents) {
+        try {
+            const res = await distributeWeeklyGachaRewards(ev.weekStart);
+            if (res.success && res.reason !== 'already_distributed') {
+                settledCount++;
+            }
+        } catch (err) {
+            console.error(`❌ [GachaWeeklyJob] Lỗi Lazy Settlement cho tuần ${ev.weekStart}:`, err);
+        }
+    }
+    return settledCount;
 }
 
 /**

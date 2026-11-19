@@ -21,6 +21,12 @@ export interface ISeasonPass extends Document {
     isActive: boolean;
     isSettled: boolean;
     settledAt?: Date | null;
+    eliteUnlockCost?: number;
+    eliteFreeVipTier?: number;
+    eliteBonusXp?: number;
+    vaultMaxDeposit?: number;
+    vaultWithdrawLevel?: number;
+    vaultLastDays?: number;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -47,6 +53,7 @@ const PassRewardSubSchema = new Schema<PassReward>(
 const SeasonPassTierSubSchema = new Schema<SeasonPassTier>(
     {
         level: { type: Number, required: true, min: 1, max: 80 },
+        xpRequired: { type: Number, default: 100, min: 10 },
         freeReward: { type: PassRewardSubSchema, default: null },
         eliteReward: { type: PassRewardSubSchema, default: null },
     },
@@ -109,6 +116,12 @@ const SeasonPassSchema = new Schema<ISeasonPass>(
         isActive: { type: Boolean, default: true },
         isSettled: { type: Boolean, default: false },
         settledAt: { type: Date, default: null },
+        eliteUnlockCost: { type: Number, default: 1500, min: 0 },
+        eliteFreeVipTier: { type: Number, default: 4, min: 1, max: 10 },
+        eliteBonusXp: { type: Number, default: 500, min: 0 },
+        vaultMaxDeposit: { type: Number, default: 2000, min: 0 },
+        vaultWithdrawLevel: { type: Number, default: 60, min: 1, max: 80 },
+        vaultLastDays: { type: Number, default: 7, min: 1, max: 30 },
     },
     { timestamps: true }
 );

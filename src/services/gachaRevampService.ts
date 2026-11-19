@@ -28,9 +28,9 @@ const RARITY_RANK: Record<GachaItemRarity, number> = {
 export async function generateWeeklyRewards(): Promise<any> {
     try {
         const [epicBoxes, rareBoxes, normalBoxes] = await Promise.all([
-            MysteryBox.find({ isActive: true, rarity: { $in: ['epic', 'legend'] } }),
+            MysteryBox.find({ isActive: true, rarity: { $in: ['epic', 'legendary', 'legend'] } }),
             MysteryBox.find({ isActive: true, rarity: 'rare' }),
-            MysteryBox.find({ isActive: true, rarity: 'normal' }),
+            MysteryBox.find({ isActive: true, rarity: { $in: ['common', 'normal'] } }),
         ]);
 
         const pick = (list: any[], fallbackName: string, fallbackRarity: string, fallbackColor: string) => {
@@ -41,7 +41,7 @@ export async function generateWeeklyRewards(): Promise<any> {
                     name: item.name,
                     rarity: item.rarity,
                     color:
-                        item.rarity === 'legend'
+                        item.rarity === 'legendary' || item.rarity === 'legend'
                             ? '#F59E0B'
                             : item.rarity === 'epic'
                             ? '#A855F7'
@@ -154,6 +154,11 @@ export function getPreviousWeekRange(referenceDate = new Date()): { weekStart: s
  * Retrieves the current week's active gacha event or creates one idempotently.
  */
 export async function getOrCreateCurrentWeeklyEvent(): Promise<IGachaWeeklyEvent> {
+    // Lazy settlement of previous un-distributed events when server is accessed (R4)
+    import('../jobs/gachaWeeklyJob')
+        .then((m) => m.settlePendingWeeklyGachaEvents())
+        .catch(() => undefined);
+
     const { weekStart, weekEnd } = getCurrentWeekRange();
 
     const existingEvent = await GachaWeeklyEvent.findOne({

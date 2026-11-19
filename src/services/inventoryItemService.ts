@@ -15,6 +15,7 @@ interface PopulatedMysteryBox {
     _id: Types.ObjectId | string;
     name?: string;
     rarity?: string;
+    imageUrl?: string;
 }
 
 interface PopulatedSpecialItem {
@@ -92,6 +93,7 @@ export const getUserInventoryItems = async (userId: string): Promise<InventoryIt
                 quantity: item.quantity,
                 displayName: box?.name || 'Hộp Quà Bí Ẩn',
                 rarity,
+                imageUrl: box?.imageUrl,
                 color: getMysteryBoxColor(rarity),
                 canExchange: false,
                 lastUpdated: item.lastUpdated,

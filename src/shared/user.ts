@@ -43,6 +43,7 @@ export interface User {
     totalCoinsSpent?: number;
     gachaTickets?: number;
     gachaTier?: number;
+    gachaTierEnteredAt?: string | Date;
     vipTier?: number;
     claimedVipTiers?: number[];
     monthlySpending?: number;
