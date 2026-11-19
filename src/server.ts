@@ -34,6 +34,7 @@ import { startShopEventCronJob } from './jobs/shopEventJob';
 import { startGachaWeeklyCronJob } from './jobs/gachaWeeklyJob';
 import { startAutoBackupCronJob } from './jobs/autoBackup';
 import { startSeasonPassCronJob } from './jobs/seasonPassJob';
+import { startAutoApproveCronJob } from './jobs/autoApproveJob';
 import { ensureQuizSampleSeed } from './seeds/quizSampleData';
 
 const app = express();
@@ -120,6 +121,7 @@ const startServer = async () => {
         startGachaWeeklyCronJob();
         startAutoBackupCronJob();
         startSeasonPassCronJob();
+        startAutoApproveCronJob();
 
         const server = app.listen(PORT as number, '0.0.0.0', () => {
             console.log(`🚀 Server running on port ${PORT} (0.0.0.0)`);

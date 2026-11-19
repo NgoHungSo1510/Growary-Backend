@@ -1,9 +1,8 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { User } from '../models';
 import { AuthRequest } from '../middleware/auth';
-import { getJwtSecret } from '../constants';
+import { issueSessionToken } from '../services/sessionService';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -51,15 +50,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             password: hashedPassword,
         });
 
-        const token = jwt.sign(
-            { userId: user._id.toString(), role: user.role },
-            getJwtSecret(),
-            { expiresIn: '30d' }
-        );
+        const { token, expiresAt } = issueSessionToken(user);
 
         res.status(201).json({
             message: 'User registered successfully',
             token,
+            expiresAt,
             user: {
                 id: user._id,
                 username: user.username,
@@ -95,15 +91,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const token = jwt.sign(
-            { userId: user._id.toString(), role: user.role },
-            getJwtSecret(),
-            { expiresIn: '30d' }
-        );
+        const { token, expiresAt } = issueSessionToken(user);
 
         res.json({
             message: 'Login successful',
             token,
+            expiresAt,
             user: {
                 id: user._id,
                 username: user.username,
@@ -127,6 +120,23 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
         res.json({ user: req.user });
     } catch (error) {
         res.status(500).json({ error: 'Failed to get profile' });
+    }
+};
+
+export const sessionHeartbeat = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.user) {
+            res.status(401).json({ error: 'User not found', code: 'TOKEN_INVALID' });
+            return;
+        }
+        const { token, expiresAt } = issueSessionToken(req.user);
+        res.json({
+            token,
+            expiresAt,
+            user: req.user,
+        });
+    } catch {
+        res.status(500).json({ error: 'Failed to refresh session' });
     }
 };
 

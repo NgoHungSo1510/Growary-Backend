@@ -14,35 +14,38 @@ export const authMiddleware = async (
     res: Response,
     next: NextFunction
 ): Promise<void> => {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        res.status(401).json({ error: 'No token provided', code: 'TOKEN_INVALID' });
+        return;
+    }
+
+    const token = authHeader.split(' ')[1];
+    let decoded: { userId: string; role?: string };
+
     try {
-        const authHeader = req.headers.authorization;
-
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            res.status(401).json({ error: 'No token provided' });
-            return;
-        }
-
-        const token = authHeader.split(' ')[1];
         const secret = getJwtSecret();
+        // Lý do dùng as: jwt.verify trả về string | JwtPayload, cần narrow về payload chuẩn đã ký của Growary
+        decoded = jwt.verify(token, secret) as { userId: string; role?: string };
+    } catch {
+        res.status(401).json({ error: 'Invalid token', code: 'TOKEN_INVALID' });
+        return;
+    }
 
-        const decoded = jwt.verify(token, secret) as { userId: string; role?: string };
+    req.userId = decoded.userId;
+    req.userRole = decoded.role;
 
-        // Attach lightweight claims first — avoids DB hit for role-check-only routes
-        req.userId = decoded.userId;
-        req.userRole = decoded.role;
-
-        // Fetch full user doc (needed for req.user consumers)
+    try {
         const user = await User.findById(decoded.userId).select('-password');
-
         if (!user) {
-            res.status(401).json({ error: 'User not found' });
+            res.status(401).json({ error: 'User not found', code: 'TOKEN_INVALID' });
             return;
         }
-
         req.user = user;
         next();
-    } catch (error) {
-        res.status(401).json({ error: 'Invalid token' });
+    } catch {
+        res.status(503).json({ error: 'Server waking up, please retry', code: 'SERVER_WAKING' });
     }
 };
 
@@ -51,7 +54,6 @@ export const adminMiddleware = (
     res: Response,
     next: NextFunction
 ): void => {
-    // Prefer role from token (no extra DB hit), fall back to fetched user
     const role = req.userRole || req.user?.role;
     if (!role || role !== 'admin') {
         res.status(403).json({ error: 'Admin access required' });

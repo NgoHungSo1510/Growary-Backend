@@ -48,6 +48,8 @@ export const buildCarryoverTasks = (tasks: any[]) =>
             category: t.category,
             durationMinutes: t.durationMinutes,
             scheduledTime: t.scheduledTime,
+            approvalRequestId: t.approvalRequestId,
+            requestedAt: t.requestedAt,
             isCompleted: false,
         }));
 

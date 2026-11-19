@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { validate } from '../middleware/validate';
-import { registerSchema, loginSchema, updateMeSchema } from '../validators/authValidator';
+import { registerSchema, loginSchema, updateMeSchema, sessionHeartbeatSchema } from '../validators/authValidator';
 import rateLimit from 'express-rate-limit';
 import * as authController from '../controllers/authController';
 
@@ -17,6 +17,7 @@ const authLimiter = rateLimit({
 
 router.post('/register', authLimiter, validate(registerSchema), authController.register);
 router.post('/login', authLimiter, validate(loginSchema), authController.login);
+router.post('/session/heartbeat', authMiddleware, validate(sessionHeartbeatSchema), authController.sessionHeartbeat);
 router.get('/me', authMiddleware, authController.getMe);
 router.put('/me', authMiddleware, validate(updateMeSchema), authController.updateMe);
 router.delete('/me/penalties', authMiddleware, authController.clearPenalties);

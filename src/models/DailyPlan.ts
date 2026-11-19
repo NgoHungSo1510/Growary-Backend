@@ -19,6 +19,13 @@ export interface IDailyTask {
     proofImageUrl?: string;
     category?: string;
     passXpAwarded?: boolean;
+    approvalRequestId?: string;
+    requestedAt?: Date;
+    autoApproved?: boolean;
+    autoApprovedAt?: Date;
+    adminReviewedAt?: Date;
+    adminReviewStatus?: 'pending_review' | 'confirmed' | 'revoked';
+    adminReviewNote?: string;
 }
 
 // Backlog item from previous day
@@ -70,6 +77,16 @@ const DailyTaskSubSchema = new Schema<IDailyTask>(
         proofImageUrl: String,
         category: String,
         passXpAwarded: { type: Boolean, default: false },
+        approvalRequestId: String,
+        requestedAt: Date,
+        autoApproved: { type: Boolean, default: false },
+        autoApprovedAt: Date,
+        adminReviewedAt: Date,
+        adminReviewStatus: {
+            type: String,
+            enum: ['pending_review', 'confirmed', 'revoked'],
+        },
+        adminReviewNote: String,
     },
     { _id: true }
 );
@@ -120,5 +137,8 @@ const DailyPlanSchema = new Schema<IDailyPlan>(
 // Index for fast user + date queries
 DailyPlanSchema.index({ user: 1, date: 1 }, { unique: true });
 DailyPlanSchema.index({ date: 1, isDailyScoreCalculated: 1 });
+DailyPlanSchema.index({ 'tasks.adminApprovalStatus': 1, 'tasks.requestedAt': 1 });
+DailyPlanSchema.index({ 'tasks.approvalRequestId': 1 });
+DailyPlanSchema.index({ 'tasks.autoApproved': 1, 'tasks.adminReviewStatus': 1 });
 
 export const DailyPlan = mongoose.model<IDailyPlan>('DailyPlan', DailyPlanSchema);

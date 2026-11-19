@@ -1,46 +1,21 @@
-import { Router, Response } from 'express';
-import { NotificationConfig } from '../../models';
-import { AuthRequest } from '../../middleware/auth';
+import { Router } from 'express';
+import { validate } from '../../middleware/validate';
+import {
+    upsertNotificationConfigSchema,
+    updateSystemTriggerSchema,
+    broadcastNotificationSchema,
+} from '../../validators/notificationValidator';
+import * as notificationController from '../../controllers/notificationController';
 
 const router = Router();
 
-// ==================== NOTIFICATION CONFIG ====================
+// ==================== NOTIFICATION CENTER (SYSTEM TRIGGERS + OFFLINE ALARMS) ====================
+router.get('/notifications', notificationController.getAdminNotificationCenter);
+router.post('/notifications', validate(upsertNotificationConfigSchema), notificationController.createNotificationConfig);
+router.put('/notifications/:id', validate(upsertNotificationConfigSchema), notificationController.updateNotificationConfig);
+router.delete('/notifications/:id', notificationController.deleteNotificationConfig);
 
-router.get('/notifications', async (_req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        const configs = await NotificationConfig.find().sort({ createdAt: -1 });
-        res.json({ configs });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch notification configs' });
-    }
-});
-
-router.post('/notifications', async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        const config = await NotificationConfig.create(req.body);
-        res.status(201).json({ config });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to create notification config' });
-    }
-});
-
-router.put('/notifications/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        const config = await NotificationConfig.findByIdAndUpdate(req.params.id, req.body, { new: true });
-        if (!config) { res.status(404).json({ error: 'Not found' }); return; }
-        res.json({ config });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to update notification config' });
-    }
-});
-
-router.delete('/notifications/:id', async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        await NotificationConfig.findByIdAndDelete(req.params.id);
-        res.json({ message: 'Deleted' });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to delete notification config' });
-    }
-});
+router.patch('/notifications/triggers/:key', validate(updateSystemTriggerSchema), notificationController.updateSystemTrigger);
+router.post('/notifications/broadcast', validate(broadcastNotificationSchema), notificationController.broadcastNotification);
 
 export default router;

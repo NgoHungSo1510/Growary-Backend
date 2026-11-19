@@ -33,3 +33,4 @@ export { GachaWeeklyEvent, IGachaWeeklyEvent, IFeaturedBox, IWeeklyRewards, IWee
 export { GachaLeaderboard, IGachaLeaderboard, LeaderboardRarity } from './GachaLeaderboard';
 export { SeasonPass, ISeasonPass } from './SeasonPass';
 export { UserPassProgress, IUserPassProgress, IUserQuestState } from './UserPassProgress';
+export { ProcessedAction, IProcessedAction } from './ProcessedAction';

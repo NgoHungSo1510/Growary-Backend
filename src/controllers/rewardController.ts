@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import * as vipService from '../services/vipService';
 import * as rewardService from '../services/rewardService';
 import * as warehouseService from '../services/warehouseService';
+import * as approvalService from '../services/approvalService';
 
 // ==================== SHOP REWARDS CRUD ====================
 
@@ -168,6 +169,7 @@ export const useItem = async (req: AuthRequest, res: Response): Promise<void> =>
 
 export const getMyVouchers = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
+        void approvalService.runAutoApprovalSweep().catch(() => undefined);
         const vouchers = await Voucher.find({ user: req.userId }).populate('reward').sort({ createdAt: -1 });
         res.json({ vouchers });
     } catch (error) {
@@ -210,9 +212,18 @@ export const useVoucher = async (req: AuthRequest, res: Response): Promise<void>
         }
         if (voucher.status !== 'active') { res.status(400).json({ error: 'Voucher is not active' }); return; }
 
+        const now = new Date();
         voucher.status = 'pending_use';
-        voucher.usedAt = new Date();
+        voucher.usedAt = now;
+        voucher.pendingSince = now;
         await voucher.save();
+
+        await approvalService.notifyAdminsOnPendingRequest({
+            kind: 'voucher_use',
+            requesterName: req.user?.username || 'Người chơi',
+            itemTitle: `${voucher.rewardTitleSnapshot} (${voucher.code})`,
+            relatedId: voucher.code,
+        });
 
         res.json({ voucher });
     } catch (error) {

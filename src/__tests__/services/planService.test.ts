@@ -50,4 +50,26 @@ describe('Plan Service (Carryover Tasks Logic)', () => {
         expect(carryover[0].durationMinutes).toBe(45);
         expect(carryover[0].pointsReward).toBe(30);
     });
+
+    it('should preserve approvalRequestId and requestedAt on pending custom tasks across carryover', () => {
+        const requestedAt = new Date('2026-11-18T10:00:00.000Z');
+        const tasks = [
+            {
+                title: 'Tập đàn 45 phút',
+                pointsReward: 10,
+                coinReward: 10,
+                isCustomTask: true,
+                isMandatory: false,
+                adminApprovalStatus: 'pending',
+                approvalRequestId: 'req-carry-123',
+                requestedAt,
+                isCompleted: false,
+            },
+        ];
+
+        const carryover = buildCarryoverTasks(tasks);
+        expect(carryover).toHaveLength(1);
+        expect(carryover[0].approvalRequestId).toBe('req-carry-123');
+        expect(carryover[0].requestedAt).toEqual(requestedAt);
+    });
 });

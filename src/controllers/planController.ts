@@ -1,35 +1,32 @@
 import { Response } from 'express';
-import { DailyPlan, User, Journal, PenaltyConfig, TaskTemplate, Voucher, BossEvent, BossRecord } from '../models';
+import { DailyPlan, PenaltyConfig, TaskTemplate, IDailyTask } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import {
     getMandatoryTasks,
     buildCarryoverTasks,
     reconcileYesterdayPlanAndPenalties,
-    applyDailyTaskStreakProgress,
-    syncBossAttackPoints,
 } from '../services/planService';
-import { processLevelUp } from '../services/levelService';
-import { checkAndGrantMilestones } from '../utils/milestones';
-import { calculatePenaltyAdjustedReward } from '../utils/penalty';
-import * as seasonPassHooks from '../services/seasonPassHooks';
-import { STREAK_MIN_TASKS, VOUCHER_EXPIRY_DAYS, getStartOfDay } from '../constants';
-import { GrantedRewards } from '../types';
+import { executeTaskCompletion } from '../services/taskExecutionService';
+import { notifyAdminsOnPendingRequest, runAutoApprovalSweep } from '../services/approvalService';
+import { getStartOfDay } from '../constants';
 import { v4 as uuidv4 } from 'uuid';
 
-export const getPenaltyConfig = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getPenaltyConfig = async (_req: AuthRequest, res: Response): Promise<void> => {
     try {
         let config = await PenaltyConfig.findOne();
         if (!config) {
             config = await PenaltyConfig.create({ lateThresholds: [], missedQuestPenaltyCoin: 50 });
         }
         res.json({ config });
-    } catch (error) {
+    } catch {
         res.status(500).json({ error: 'Failed to fetch penalty config' });
     }
 };
 
 export const getTodayPlan = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
+        void runAutoApprovalSweep().catch(() => undefined);
+
         const today = getStartOfDay();
         let plan = await DailyPlan.findOne({ user: req.userId, date: today });
 
@@ -53,7 +50,7 @@ export const getTodayPlan = async (req: AuthRequest, res: Response): Promise<voi
         }
 
         res.json({ plan });
-    } catch (error) {
+    } catch {
         res.status(500).json({ error: 'Failed to fetch today plan' });
     }
 };
@@ -69,7 +66,7 @@ export const getTomorrowPlan = async (req: AuthRequest, res: Response): Promise<
             const mandatoryTasks = await getMandatoryTasks();
             const todayDate = getStartOfDay();
             const todayPlan = await DailyPlan.findOne({ user: req.userId, date: todayDate });
-            const prevTasks = todayPlan ? buildCarryoverTasks(todayPlan.tasks as any[]) : [];
+            const prevTasks = todayPlan ? buildCarryoverTasks(todayPlan.tasks) : [];
 
             plan = await DailyPlan.create({
                 user: req.userId,
@@ -80,7 +77,7 @@ export const getTomorrowPlan = async (req: AuthRequest, res: Response): Promise<
         }
 
         res.json({ plan });
-    } catch (error) {
+    } catch {
         res.status(500).json({ error: 'Failed to fetch tomorrow plan' });
     }
 };
@@ -96,7 +93,7 @@ export const getPlanByDate = async (req: AuthRequest, res: Response): Promise<vo
         }
 
         res.json({ plan });
-    } catch (error) {
+    } catch {
         res.status(500).json({ error: 'Failed to fetch plan' });
     }
 };
@@ -110,12 +107,22 @@ export const getHistory = async (req: AuthRequest, res: Response): Promise<void>
 
         const plans = await DailyPlan.find({ user: req.userId, date: { $gte: since } }).sort({ date: -1 });
 
-        const entries: any[] = [];
+        const entries: {
+            _id: unknown;
+            title: string;
+            category?: string;
+            pointsReward: number;
+            coinReward: number;
+            completedAt: Date;
+            proofImageUrl?: string;
+            date: Date;
+        }[] = [];
+
         for (const plan of plans) {
             for (const task of plan.tasks) {
                 if (task.isCompleted && task.completedAt) {
                     entries.push({
-                        _id: (task as any)._id,
+                        _id: (task as { _id?: unknown })._id,
                         title: task.title,
                         category: task.category,
                         pointsReward: task.pointsReward,
@@ -130,8 +137,7 @@ export const getHistory = async (req: AuthRequest, res: Response): Promise<void>
 
         entries.sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
         res.json({ entries, total: entries.length });
-    } catch (error) {
-        console.error('History error:', error);
+    } catch {
         res.status(500).json({ error: 'Failed to fetch history' });
     }
 };
@@ -142,27 +148,37 @@ export const addTask = async (req: AuthRequest, res: Response): Promise<void> =>
         const { templateId, customTitle, scheduledTime, durationMinutes } = req.body;
 
         const plan = await DailyPlan.findOne({ _id: planId, user: req.userId });
-        if (!plan) { res.status(404).json({ error: 'Plan not found' }); return; }
+        if (!plan) {
+            res.status(404).json({ error: 'Plan not found' });
+            return;
+        }
 
-        let taskData: any = { scheduledTime, durationMinutes, isCompleted: false };
+        let taskData: Partial<IDailyTask> & { title: string; pointsReward: number; coinReward: number; isCustomTask: boolean; adminApprovalStatus: 'pending' | 'approved' | 'rejected'; isCompleted: boolean };
 
         if (templateId) {
             const template = await TaskTemplate.findById(templateId);
-            if (!template) { res.status(404).json({ error: 'Task template not found' }); return; }
+            if (!template) {
+                res.status(404).json({ error: 'Task template not found' });
+                return;
+            }
 
             taskData = {
-                ...taskData,
+                scheduledTime,
+                durationMinutes,
+                isCompleted: false,
                 templateId: template._id,
                 title: template.title,
                 pointsReward: template.pointsReward,
-                coinReward: (template as any).coinReward ?? 5,
+                coinReward: (template as { coinReward?: number }).coinReward ?? 5,
                 isCustomTask: false,
                 adminApprovalStatus: 'approved',
                 category: template.category,
             };
         } else if (customTitle) {
             taskData = {
-                ...taskData,
+                scheduledTime,
+                durationMinutes,
+                isCompleted: false,
                 customTitle,
                 title: customTitle,
                 description: req.body.description || '',
@@ -171,17 +187,28 @@ export const addTask = async (req: AuthRequest, res: Response): Promise<void> =>
                 coinReward: 10,
                 isCustomTask: true,
                 adminApprovalStatus: 'pending',
+                approvalRequestId: uuidv4(),
+                requestedAt: new Date(),
             };
         } else {
             res.status(400).json({ error: 'Either templateId or customTitle is required' });
             return;
         }
 
-        plan.tasks.push(taskData);
+        plan.tasks.push(taskData as IDailyTask);
         await plan.save();
+
+        if (customTitle) {
+            await notifyAdminsOnPendingRequest({
+                kind: 'custom_task',
+                requesterName: req.user?.username || 'Người chơi',
+                itemTitle: customTitle,
+                relatedId: String(plan._id),
+            });
+        }
+
         res.status(201).json({ plan });
-    } catch (error) {
-        console.error('Add task error:', error);
+    } catch {
         res.status(500).json({ error: 'Failed to add task' });
     }
 };
@@ -190,129 +217,32 @@ export const completeTask = async (req: AuthRequest, res: Response): Promise<voi
     try {
         const { planId, taskIndex } = req.params;
         const { isCompleted, proofImageUrl } = req.body;
+        const idx = parseInt(taskIndex, 10);
 
-        const plan = await DailyPlan.findOne({ _id: planId, user: req.userId });
-        if (!plan) { res.status(404).json({ error: 'Plan not found' }); return; }
+        const result = await executeTaskCompletion({
+            userId: req.userId!,
+            planId,
+            taskIndex: idx,
+            isCompleted,
+            proofImageUrl,
+        });
 
-        const idx = parseInt(taskIndex);
-        if (isNaN(idx) || idx < 0 || idx >= plan.tasks.length) {
-            res.status(400).json({ error: 'Invalid task index' }); return;
-        }
-
-        const task = plan.tasks[idx];
-        const wasCompleted = task.isCompleted;
-        task.isCompleted = isCompleted;
-
-        if (isCompleted && !wasCompleted) {
-            task.completedAt = new Date();
-            if (proofImageUrl) task.proofImageUrl = proofImageUrl;
-
-            let grantedRewards: GrantedRewards & { xp?: number; questCoins?: number; questXp?: number; isLate?: boolean; latePercentage?: number } = {
-                coins: 0, gachaTickets: 0, items: [], levelUps: [], xp: 0, questCoins: 0, questXp: 0, isLate: false, latePercentage: 0
-            };
-
-            const penaltyResult = await calculatePenaltyAdjustedReward(task, plan.date, task.completedAt!);
-            const finalCoinReward = penaltyResult.coins;
-            const finalXpReward = penaltyResult.xp;
-
-            let achievedStreak: number | null = null;
-            if (task.adminApprovalStatus === 'approved') {
-                const user = await User.findById(req.userId);
-                if (user) {
-                    user.coins += finalCoinReward;
-                    user.currentPoints += finalXpReward;
-                    user.totalPointsEarned += finalXpReward;
-
-                    const lvlRewards = await processLevelUp(user, finalXpReward);
-
-                    grantedRewards.coins = finalCoinReward + lvlRewards.coins;
-                    grantedRewards.xp = finalXpReward;
-                    grantedRewards.questCoins = finalCoinReward;
-                    grantedRewards.questXp = finalXpReward;
-                    grantedRewards.isLate = finalCoinReward < (task.coinReward ?? task.pointsReward) || finalXpReward < task.pointsReward;
-                    if (grantedRewards.isLate) {
-                        const originalCoin = task.coinReward ?? task.pointsReward;
-                        grantedRewards.latePercentage = originalCoin > 0 ? Math.round((1 - finalCoinReward / originalCoin) * 100) : 0;
-                    }
-                    grantedRewards.gachaTickets += lvlRewards.gachaTickets;
-                    grantedRewards.items.push(...lvlRewards.items);
-                    grantedRewards.levelUps.push(...lvlRewards.levelUps);
-
-                    const completedApproved = plan.tasks.filter(t => t.isCompleted && t.adminApprovalStatus === 'approved').length;
-
-                    const streakProgress = applyDailyTaskStreakProgress(
-                        user,
-                        completedApproved,
-                        plan.isDailyScoreCalculated
-                    );
-                    if (streakProgress.streakUpdated) {
-                        plan.isDailyScoreCalculated = true;
-                    }
-                    if (streakProgress.streakUpdated || streakProgress.restoredGrace) {
-                        achievedStreak = user.currentStreak;
-                    }
-
-                    await user.save();
-
-                    if (completedApproved === STREAK_MIN_TASKS) {
-                        const mlRewards = await checkAndGrantMilestones(user._id);
-                        grantedRewards.coins += mlRewards.coins;
-                        grantedRewards.gachaTickets += mlRewards.gachaTickets;
-                        grantedRewards.items.push(...mlRewards.items);
-                    }
-
-                    await syncBossAttackPoints(req.userId!, finalXpReward, finalCoinReward);
-                }
-
-                const today = getStartOfDay();
-                await Journal.findOneAndUpdate(
-                    { user: req.userId, date: today },
-                    {
-                        $push: { autoLogs: { taskId: task.templateId, taskTitle: task.title, completedAt: new Date() } },
-                        $inc: { totalTasksCompleted: 1, totalPointsEarned: finalXpReward },
-                    },
-                    { upsert: true }
-                );
-            }
-
-            await plan.save();
-            if (task.adminApprovalStatus === 'approved') {
-                await seasonPassHooks.onTaskCompleted(
-                    req.userId!,
-                    plan._id.toString(),
-                    String((task as { _id?: unknown })._id ?? ''),
-                    finalCoinReward,
-                    finalXpReward
-                );
-                if (achievedStreak !== null) {
-                    await seasonPassHooks.onDailyStreakAchieved(req.userId!, achievedStreak);
-                }
-            }
-            res.json({ plan, grantedRewards });
+        if (result.grantedRewards) {
+            res.json({ plan: result.plan, grantedRewards: result.grantedRewards });
             return;
-        } else if (!isCompleted && wasCompleted) {
-            const completedAt = task.completedAt;
-            task.completedAt = undefined;
-
-            if (task.adminApprovalStatus === 'approved') {
-                const user = await User.findById(req.userId);
-                if (user) {
-                    const reverseResult = completedAt
-                        ? await calculatePenaltyAdjustedReward(task, plan.date, completedAt)
-                        : { coins: task.coinReward ?? task.pointsReward, xp: task.pointsReward };
-                    user.coins = Math.max(0, user.coins - reverseResult.coins);
-                    user.xp = Math.max(0, user.xp - reverseResult.xp);
-                    user.currentPoints = Math.max(0, user.currentPoints - reverseResult.xp);
-                    user.totalPointsEarned = Math.max(0, user.totalPointsEarned - reverseResult.xp);
-                    await user.save();
-                }
-            }
         }
 
-        await plan.save();
-        res.json({ plan });
-    } catch (error) {
-        console.error('Complete task error:', error);
+        res.json({ plan: result.plan });
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Failed to update task';
+        if (msg === 'Plan not found') {
+            res.status(404).json({ error: msg });
+            return;
+        }
+        if (msg === 'Invalid task index') {
+            res.status(400).json({ error: msg });
+            return;
+        }
         res.status(500).json({ error: 'Failed to update task' });
     }
 };
@@ -323,11 +253,15 @@ export const updateTask = async (req: AuthRequest, res: Response): Promise<void>
         const { scheduledTime, durationMinutes, customTitle } = req.body;
 
         const plan = await DailyPlan.findOne({ _id: planId, user: req.userId });
-        if (!plan) { res.status(404).json({ error: 'Plan not found' }); return; }
+        if (!plan) {
+            res.status(404).json({ error: 'Plan not found' });
+            return;
+        }
 
-        const idx = parseInt(taskIndex);
-        if (isNaN(idx) || idx < 0 || idx >= plan.tasks.length) {
-            res.status(400).json({ error: 'Invalid task index' }); return;
+        const idx = parseInt(taskIndex, 10);
+        if (Number.isNaN(idx) || idx < 0 || idx >= plan.tasks.length) {
+            res.status(400).json({ error: 'Invalid task index' });
+            return;
         }
 
         if (scheduledTime !== undefined) plan.tasks[idx].scheduledTime = scheduledTime;
@@ -336,7 +270,7 @@ export const updateTask = async (req: AuthRequest, res: Response): Promise<void>
 
         await plan.save();
         res.json({ plan });
-    } catch (error) {
+    } catch {
         res.status(500).json({ error: 'Failed to update task' });
     }
 };
@@ -346,19 +280,27 @@ export const reorderTasks = async (req: AuthRequest, res: Response): Promise<voi
         const { planId } = req.params;
         const { taskOrder } = req.body;
 
-        if (!Array.isArray(taskOrder)) { res.status(400).json({ error: 'taskOrder must be an array' }); return; }
+        if (!Array.isArray(taskOrder)) {
+            res.status(400).json({ error: 'taskOrder must be an array' });
+            return;
+        }
 
         const plan = await DailyPlan.findOne({ _id: planId, user: req.userId });
-        if (!plan) { res.status(404).json({ error: 'Plan not found' }); return; }
+        if (!plan) {
+            res.status(404).json({ error: 'Plan not found' });
+            return;
+        }
 
         if (taskOrder.length !== plan.tasks.length) {
-            res.status(400).json({ error: 'taskOrder length must match tasks length' }); return;
+            res.status(400).json({ error: 'taskOrder length must match tasks length' });
+            return;
         }
 
         const seen = new Set<number>();
         for (const idx of taskOrder) {
             if (typeof idx !== 'number' || idx < 0 || idx >= plan.tasks.length || seen.has(idx)) {
-                res.status(400).json({ error: 'Invalid task order indices' }); return;
+                res.status(400).json({ error: 'Invalid task order indices' });
+                return;
             }
             seen.add(idx);
         }
@@ -366,7 +308,7 @@ export const reorderTasks = async (req: AuthRequest, res: Response): Promise<voi
         plan.tasks = taskOrder.map((idx: number) => plan.tasks[idx]);
         await plan.save();
         res.json({ plan });
-    } catch (error) {
+    } catch {
         res.status(500).json({ error: 'Failed to reorder tasks' });
     }
 };
@@ -376,19 +318,26 @@ export const removeTask = async (req: AuthRequest, res: Response): Promise<void>
         const { planId, taskIndex } = req.params;
 
         const plan = await DailyPlan.findOne({ _id: planId, user: req.userId });
-        if (!plan) { res.status(404).json({ error: 'Plan not found' }); return; }
-
-        const idx = parseInt(taskIndex);
-        if (isNaN(idx) || idx < 0 || idx >= plan.tasks.length) {
-            res.status(400).json({ error: 'Invalid task index' }); return;
+        if (!plan) {
+            res.status(404).json({ error: 'Plan not found' });
+            return;
         }
 
-        if (plan.tasks[idx].isMandatory) { res.status(403).json({ error: 'Cannot delete mandatory tasks' }); return; }
+        const idx = parseInt(taskIndex, 10);
+        if (Number.isNaN(idx) || idx < 0 || idx >= plan.tasks.length) {
+            res.status(400).json({ error: 'Invalid task index' });
+            return;
+        }
+
+        if (plan.tasks[idx].isMandatory) {
+            res.status(403).json({ error: 'Cannot delete mandatory tasks' });
+            return;
+        }
 
         plan.tasks.splice(idx, 1);
         await plan.save();
         res.json({ plan });
-    } catch (error) {
+    } catch {
         res.status(500).json({ error: 'Failed to remove task' });
     }
 };

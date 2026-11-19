@@ -38,3 +38,13 @@ export interface Journal {
     totalTasksCompleted: number;
     totalPointsEarned: number;
 }
+
+export type OfflineActionType = 'COMPLETE_TASK' | 'UNCOMPLETE_TASK' | 'ADD_CUSTOM_TASK' | 'SAVE_JOURNAL';
+
+export interface OfflineQueueItem {
+    idempotencyKey: string;
+    type: OfflineActionType;
+    payload: Record<string, unknown>;
+    clientTimestamp: string;
+    retries?: number;
+}

@@ -7,10 +7,13 @@ import {
     updateTaskSchema,
     reorderTasksSchema
 } from '../validators/planValidator';
+import { syncOfflineBatchSchema } from '../validators/syncValidator';
 import * as planController from '../controllers/planController';
+import * as syncController from '../controllers/syncController';
 
 const router = Router();
 
+router.post('/offline-sync', authMiddleware, validate(syncOfflineBatchSchema), syncController.syncOfflineBatch);
 router.get('/penalty-config', authMiddleware, planController.getPenaltyConfig);
 router.get('/today', authMiddleware, planController.getTodayPlan);
 router.get('/tomorrow', authMiddleware, planController.getTomorrowPlan);

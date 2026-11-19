@@ -17,6 +17,12 @@ export interface IVoucher extends Document {
     discountAmount?: number;
     hasFreeShip?: boolean;
     fragmentType?: string;
+    pendingSince?: Date;
+    autoApproved?: boolean;
+    autoApprovedAt?: Date;
+    adminReviewedAt?: Date;
+    adminReviewStatus?: 'pending_review' | 'confirmed' | 'flagged';
+    adminReviewNote?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -77,6 +83,18 @@ const VoucherSchema = new Schema<IVoucher>(
             type: Schema.Types.ObjectId,
             ref: 'User',
         },
+        pendingSince: Date,
+        autoApproved: {
+            type: Boolean,
+            default: false,
+        },
+        autoApprovedAt: Date,
+        adminReviewedAt: Date,
+        adminReviewStatus: {
+            type: String,
+            enum: ['pending_review', 'confirmed', 'flagged'],
+        },
+        adminReviewNote: String,
     },
     { timestamps: true }
 );
@@ -84,5 +102,7 @@ const VoucherSchema = new Schema<IVoucher>(
 // Index for user's vouchers and code lookup
 VoucherSchema.index({ user: 1, status: 1 });
 VoucherSchema.index({ status: 1, createdAt: -1 });
+VoucherSchema.index({ status: 1, pendingSince: 1 });
+VoucherSchema.index({ autoApproved: 1, adminReviewStatus: 1 });
 
 export const Voucher = mongoose.model<IVoucher>('Voucher', VoucherSchema);

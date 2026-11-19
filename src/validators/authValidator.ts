@@ -38,3 +38,5 @@ export const updateMeSchema = z.object({
     message: 'Current password is required to set new password',
     path: ['currentPassword']
 });
+
+export const sessionHeartbeatSchema = z.object({}).strict();

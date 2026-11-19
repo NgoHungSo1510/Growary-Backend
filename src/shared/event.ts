@@ -20,6 +20,9 @@ export interface DashboardStats {
     activeUsers: number;
     activeUsersToday: number;
     tasksCompletedToday: number;
+    autoApprovedPendingReview?: number;
+    autoApprovedTasksPendingReview?: number;
+    autoApprovedVouchersPendingReview?: number;
 }
 
 export interface ActivityData {

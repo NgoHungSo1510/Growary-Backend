@@ -32,6 +32,12 @@ export interface Voucher {
     fragmentType?: string;
     userId?: string;
     userName?: string;
+    pendingSince?: string;
+    autoApproved?: boolean;
+    autoApprovedAt?: string;
+    adminReviewedAt?: string;
+    adminReviewStatus?: 'pending_review' | 'confirmed' | 'flagged';
+    adminReviewNote?: string;
 }
 
 export interface MysteryBoxReward {

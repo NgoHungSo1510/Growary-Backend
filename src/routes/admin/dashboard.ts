@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { User, DailyPlan, Voucher } from '../../models';
 import { AuthRequest } from '../../middleware/auth';
+import { runAutoApprovalSweep, getAutoApprovedReviewQueue } from '../../services/approvalService';
 
 const router = Router();
 
@@ -8,6 +9,7 @@ const router = Router();
 
 router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => {
     try {
+        await runAutoApprovalSweep().catch(() => undefined);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -74,8 +76,25 @@ router.get('/stats', async (_req: AuthRequest, res: Response): Promise<void> => 
         const todayAct = dailyActivity.find(a => a._id === todayStr);
         const tasksCompletedToday = todayAct?.tasksCompleted || 0;
 
+        const reviewQueue = await getAutoApprovedReviewQueue('pending_review').catch(() => []);
+        const autoApprovedTasksPendingReview = reviewQueue.filter(i => i.kind === 'task').length;
+        const autoApprovedVouchersPendingReview = reviewQueue.filter(i => i.kind === 'voucher').length;
+        const autoApprovedPendingReview = reviewQueue.length;
+
         res.json({
-            stats: { totalUsers, newUsersToday, pendingVouchers, pendingTasks, activeUsers, totalXPGranted, activeUsersToday, tasksCompletedToday },
+            stats: {
+                totalUsers,
+                newUsersToday,
+                pendingVouchers,
+                pendingTasks,
+                activeUsers,
+                totalXPGranted,
+                activeUsersToday,
+                tasksCompletedToday,
+                autoApprovedPendingReview,
+                autoApprovedTasksPendingReview,
+                autoApprovedVouchersPendingReview,
+            },
             activity: { labels, tasksCompleted, xpGranted },
         });
     } catch (error) {
