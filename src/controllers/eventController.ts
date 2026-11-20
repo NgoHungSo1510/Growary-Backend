@@ -1,6 +1,8 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { checkWeeklyRotation, getStartOfWeek, getMiniGameCatalog } from '../services/bossService';
+import { executeBossAttackWithOverflow } from '../services/bossDamageService';
+import { AppError } from '../middleware/errorHandler';
 import { BossEvent } from '../models/BossEvent';
 import { BossRecord } from '../models/BossRecord';
 import { BossCollection, UserBossCollection } from '../models';
@@ -80,98 +82,28 @@ export const attackBoss = async (req: AuthRequest, res: Response): Promise<void>
             return;
         }
 
-        // Validate usePercentage
         const validPercentages = [0.25, 0.5, 0.75, 1.0];
         if (!validPercentages.includes(usePercentage)) {
             res.status(400).json({ error: 'Invalid usePercentage. Must be 0.25, 0.5, 0.75, or 1.0' });
             return;
         }
 
-        const activeBoss = await BossEvent.findOne({ _id: bossId, status: 'active' });
-        if (!activeBoss) { res.status(404).json({ error: 'Boss not found or not active' }); return; }
-        if (activeBoss.currentHp <= 0) { res.status(400).json({ error: 'Character already unlocked' }); return; }
-
-        let userRecord = await BossRecord.findOne({ eventId: activeBoss._id, userId: req.userId });
-        if (!userRecord || userRecord.attackPoints <= 0) {
-            res.status(400).json({ error: 'No attack points available' }); return;
-        }
-
-        // Verify quiz result trên server (bảo mật, client không tự quyết được)
-        let actualMiniGameResult = miniGameResult;
-        if (miniGameType === 'quiz' && questionIndex !== undefined && answerIndex !== undefined) {
-            const q = activeBoss.miniGameQuestions?.[questionIndex];
-            actualMiniGameResult = (q && q.correctIndex === answerIndex) ? 'critical' : 'normal';
-        }
-
-        // Tính damage
-        const pointsToUse = Math.floor(userRecord.attackPoints * usePercentage);
-        if (pointsToUse <= 0) { res.status(400).json({ error: 'Not enough attack points' }); return; }
-
-        const multiplier = actualMiniGameResult === 'critical' ? 1.5 : 0.75;
-        const potentialDamage = Math.floor(pointsToUse * multiplier);
-
-        let actualDamage = potentialDamage;
-        let refundPoints = 0;
-
-        // Cơ chế Refund: Nếu damage vượt quá HP còn lại
-        if (potentialDamage > activeBoss.currentHp) {
-            actualDamage = activeBoss.currentHp;
-            const overkillDamage = potentialDamage - actualDamage;
-            // Hoàn trả điểm chưa dùng hết (chia lại cho multiplier)
-            refundPoints = Math.floor(overkillDamage / multiplier);
-        }
-
-        // Cập nhật Boss HP
-        activeBoss.currentHp -= actualDamage;
-        if (activeBoss.currentHp <= 0) {
-            activeBoss.currentHp = 0;
-            activeBoss.status = 'completed';
-            activeBoss.defeatedCount = (activeBoss.defeatedCount || 0) + 1;
-            activeBoss.isLimited = false;
-        }
-        await activeBoss.save();
-
-        // Cập nhật BossRecord user (cho Boss hiện tại)
-        const netSpent = pointsToUse - refundPoints;
-        userRecord.attackPoints = userRecord.attackPoints - netSpent;
-        userRecord.totalDamageDealt += actualDamage;
-        userRecord.lastMiniGameType = miniGameType;
-        userRecord.lastMiniGameResult = actualMiniGameResult;
-        await userRecord.save();
-
-        // Đồng bộ điểm bị trừ cho tất cả các BossRecord active khác (Kho điểm dùng chung)
-        const allActiveBosses = await BossEvent.find({
-            $or: [
-                { status: 'active' },
-                { status: 'completed', weekActivatedAt: { $gte: getStartOfWeek() } },
-            ],
-            _id: { $ne: activeBoss._id },
+        const result = await executeBossAttackWithOverflow({
+            userId: req.userId!,
+            bossId,
+            miniGameType,
+            miniGameResult,
+            usePercentage,
+            questionIndex,
+            answerIndex,
         });
-        if (allActiveBosses.length > 0) {
-            const otherBossIds = allActiveBosses.map(b => b._id);
-            await BossRecord.updateMany(
-                { eventId: { $in: otherBossIds }, userId: req.userId },
-                { $set: { attackPoints: userRecord.attackPoints } }
-            );
-        }
 
-        // Nếu boss chết → chia thưởng
-        if (activeBoss.status === 'completed') {
-            const { distributeBossRewards } = await import('../services/bossService');
-            distributeBossRewards(activeBoss._id.toString()).catch(console.error);
-        }
-
-        res.json({
-            success: true,
-            actualDamage,
-            refundPoints,
-            isCritical: actualMiniGameResult === 'critical',
-            bossCurrentHp: activeBoss.currentHp,
-            bossStatus: activeBoss.status,
-            userAttackPoints: userRecord.attackPoints,
-            userTotalDamage: userRecord.totalDamageDealt,
-        });
+        res.json(result);
     } catch (error) {
+        if (error instanceof AppError) {
+            res.status(error.statusCode).json({ error: error.message });
+            return;
+        }
         console.error('Failed to attack boss:', error);
         res.status(500).json({ error: 'Internal server error' });
     }

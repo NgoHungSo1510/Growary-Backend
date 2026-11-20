@@ -86,3 +86,20 @@ export interface BossCollectionWithProgress {
         completedAt?: string | Date;
     };
 }
+
+export interface BossAttackResultDTO {
+    success: boolean;
+    actualDamage: number;
+    overflowDamageDealt?: number;
+    overflowBossId?: string;
+    overflowBossTitle?: string;
+    overflowBossCurrentHp?: number;
+    refundPoints: number;
+    isCritical: boolean;
+    bossCurrentHp: number;
+    bossStatus: BossStatus;
+    userAttackPoints: number;
+    userTotalDamage: number;
+    isOfflineQueued?: boolean;
+}
+

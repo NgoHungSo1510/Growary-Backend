@@ -39,7 +39,17 @@ export interface Journal {
     totalPointsEarned: number;
 }
 
-export type OfflineActionType = 'COMPLETE_TASK' | 'UNCOMPLETE_TASK' | 'ADD_CUSTOM_TASK' | 'SAVE_JOURNAL';
+export type OfflineActionType =
+    | 'COMPLETE_TASK'
+    | 'UNCOMPLETE_TASK'
+    | 'ADD_CUSTOM_TASK'
+    | 'SAVE_JOURNAL'
+    | 'PURCHASE_REWARD'
+    | 'BOSS_ATTACK'
+    | 'CLAIM_PASS_REWARD'
+    | 'QUIZ_OFFLINE_ATTEMPT'
+    | 'GACHA_OFFLINE_SPIN'
+    | 'OPEN_MYSTERY_BOX_OFFLINE';
 
 export interface OfflineQueueItem {
     idempotencyKey: string;

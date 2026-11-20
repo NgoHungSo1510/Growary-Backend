@@ -4,6 +4,7 @@ import { AppError } from '../middleware/errorHandler';
 import * as seasonPassHooks from '../services/seasonPassHooks';
 import * as quizService from '../services/quizService';
 import { getQuizLeaderboard } from '../services/quizLeaderboardService';
+import { getOfflineQuizPackForUser } from '../services/quizOfflineService';
 
 
 /**
@@ -18,6 +19,24 @@ export const getActiveQuiz = async (
     try {
         const event = await quizService.getActiveQuizEvent();
         res.json({ event: event || null });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * GET /api/quiz/offline-pack
+ * Returns offline quiz pack with hashed answers for local play
+ */
+export const getOfflineQuizPack = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        if (!req.userId) throw new AppError(401, 'Unauthorized');
+        const pack = await getOfflineQuizPackForUser(req.userId);
+        res.json(pack);
     } catch (error) {
         next(error);
     }

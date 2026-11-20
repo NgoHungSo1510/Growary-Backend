@@ -1,11 +1,9 @@
 import { Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
-import { DailyPlan, Journal, ProcessedAction, User, IDailyTask } from '../models';
+import { DailyPlan, ProcessedAction, User } from '../models';
 import { AuthRequest } from '../middleware/auth';
-import { executeTaskCompletion } from '../services/taskExecutionService';
-import { notifyAdminsOnPendingRequest } from '../services/approvalService';
 import { getStartOfDay } from '../constants';
 import { OfflineQueueItem } from '../shared/plan';
+import { processSingleOfflineAction } from '../services/offlineBatchProcessor';
 
 export interface SyncActionResult {
     idempotencyKey: string;
@@ -60,109 +58,34 @@ export const syncOfflineBatch = async (req: AuthRequest, res: Response): Promise
                 const clientDate = new Date(action.clientTimestamp);
                 const validClientDate = Number.isNaN(clientDate.getTime()) ? new Date() : clientDate;
 
-                if (action.type === 'COMPLETE_TASK' || action.type === 'UNCOMPLETE_TASK') {
-                    const planId = String(action.payload.planId || '');
-                    const taskIndex = Number(action.payload.taskIndex ?? -1);
-                    const proofImageUrl =
-                        typeof action.payload.proofImageUrl === 'string'
-                            ? action.payload.proofImageUrl
-                            : undefined;
+                const actionRes = await processSingleOfflineAction(
+                    userId,
+                    req.user?.username || 'Người chơi',
+                    action,
+                    validClientDate
+                );
 
-                    const execRes = await executeTaskCompletion({
-                        userId,
-                        planId,
-                        taskIndex,
-                        isCompleted: action.type === 'COMPLETE_TASK',
-                        proofImageUrl,
-                        completedAtOverride: validClientDate,
-                    });
-
-                    results.push({
-                        idempotencyKey: action.idempotencyKey,
-                        status: 'applied',
-                        clockDriftDetected: execRes.clockDriftDetected,
-                    });
-                } else if (action.type === 'ADD_CUSTOM_TASK') {
-                    const planId = String(action.payload.planId || '');
-                    const customTitle = String(action.payload.customTitle || '').trim();
-                    if (!planId || !customTitle) {
-                        results.push({
-                            idempotencyKey: action.idempotencyKey,
-                            status: 'rejected',
-                            reason: 'Missing planId or customTitle',
-                        });
-                        continue;
-                    }
-
-                    const plan = await DailyPlan.findOne({ _id: planId, user: userId });
-                    if (!plan) {
-                        results.push({
-                            idempotencyKey: action.idempotencyKey,
-                            status: 'rejected',
-                            reason: 'Plan not found',
-                        });
-                        continue;
-                    }
-
-                    const newTask: Partial<IDailyTask> = {
-                        customTitle,
-                        title: customTitle,
-                        description: String(action.payload.description || ''),
-                        category: String(action.payload.category || 'other'),
-                        scheduledTime:
-                            typeof action.payload.scheduledTime === 'string'
-                                ? action.payload.scheduledTime
-                                : undefined,
-                        durationMinutes:
-                            typeof action.payload.durationMinutes === 'number'
-                                ? action.payload.durationMinutes
-                                : undefined,
-                        pointsReward: 10,
-                        coinReward: 10,
-                        isCustomTask: true,
-                        adminApprovalStatus: 'pending',
-                        approvalRequestId: uuidv4(),
-                        requestedAt: validClientDate,
-                        isCompleted: false,
-                    };
-
-                    plan.tasks.push(newTask as IDailyTask);
-                    await plan.save();
-
-                    await notifyAdminsOnPendingRequest({
-                        kind: 'custom_task',
-                        requesterName: req.user?.username || 'Người chơi',
-                        itemTitle: customTitle,
-                        relatedId: String(plan._id),
-                    });
-
-                    results.push({
-                        idempotencyKey: action.idempotencyKey,
-                        status: 'applied',
-                    });
-                } else if (action.type === 'SAVE_JOURNAL') {
-                    const dateStr =
-                        typeof action.payload.date === 'string'
-                            ? action.payload.date
-                            : validClientDate.toISOString().split('T')[0];
-                    const targetDay = getStartOfDay(new Date(dateStr));
-                    const manualContent = String(action.payload.manualContent || '');
-                    const mood = String(action.payload.mood || 'neutral');
-
-                    await Journal.findOneAndUpdate(
-                        { user: userId, date: targetDay },
-                        { $set: { manualContent, mood } },
-                        { upsert: true, new: true }
-                    );
-
-                    results.push({
-                        idempotencyKey: action.idempotencyKey,
-                        status: 'applied',
-                    });
-                }
+                results.push({
+                    idempotencyKey: action.idempotencyKey,
+                    status: 'applied',
+                    clockDriftDetected: actionRes.clockDriftDetected,
+                });
             } catch (actionErr: unknown) {
                 const reason =
                     actionErr instanceof Error ? actionErr.message : 'Failed to apply offline action';
+
+                // RV-03: If transient DB connection or system crash, delete processed action for future retry
+                if (
+                    actionErr instanceof Error &&
+                    (actionErr.name === 'MongoNetworkError' ||
+                        actionErr.name === 'MongooseServerSelectionError' ||
+                        actionErr.message.includes('ECONNREFUSED'))
+                ) {
+                    await ProcessedAction.deleteOne({
+                        idempotencyKey: action.idempotencyKey,
+                    }).catch(() => {});
+                }
+
                 results.push({
                     idempotencyKey: action.idempotencyKey,
                     status: 'rejected',
@@ -186,4 +109,3 @@ export const syncOfflineBatch = async (req: AuthRequest, res: Response): Promise
         res.status(500).json({ error: 'Failed to sync offline batch' });
     }
 };
-

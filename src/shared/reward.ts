@@ -25,6 +25,7 @@ export interface Voucher {
     createdAt?: string;
     expiresAt?: string;
     status: VoucherStatus;
+    isOfflinePending?: boolean;
     usedAt?: string;
     hasUnreadApproval?: boolean;
     discountAmount?: number;

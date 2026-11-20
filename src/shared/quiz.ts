@@ -124,3 +124,37 @@ export interface QuizHistoryItem {
     score: number;
     completedAt: string;
 }
+
+export interface OfflineQuizQuestionItem {
+    _id: string;
+    content: string;
+    imageUrl?: string | null;
+    options: [string, string, string, string];
+    answerHash: string;
+}
+
+export interface OfflineQuizTopicBundle {
+    topic: QuizTopicDTO;
+    questions: OfflineQuizQuestionItem[];
+}
+
+export interface OfflineQuizPackResponse {
+    hasActiveEvent: boolean;
+    event: QuizEventDTO | null;
+    questionTimeSec: number;
+    bundles: OfflineQuizTopicBundle[];
+    generatedAt: string;
+}
+
+export interface OfflineQuizAttemptSyncPayload {
+    eventId: string;
+    topicId: string;
+    startedAt: string;
+    completedAt: string;
+    answers: {
+        questionId: string;
+        selectedIndex: number;
+        timeSpent: number;
+    }[];
+}
+

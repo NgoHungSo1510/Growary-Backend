@@ -12,6 +12,7 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get('/active', quizController.getActiveQuiz);
+router.get('/offline-pack', quizController.getOfflineQuizPack);
 router.get('/status', quizController.getQuizStatus);
 router.get('/history', quizController.getQuizHistory);
 router.get('/leaderboard', validateQuery(quizLeaderboardQuerySchema), quizController.getLeaderboard);

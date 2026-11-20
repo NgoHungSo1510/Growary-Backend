@@ -23,7 +23,18 @@ const ProcessedActionSchema = new Schema<IProcessedAction>(
         },
         actionType: {
             type: String,
-            enum: ['COMPLETE_TASK', 'UNCOMPLETE_TASK', 'ADD_CUSTOM_TASK', 'SAVE_JOURNAL'],
+            enum: [
+                'COMPLETE_TASK',
+                'UNCOMPLETE_TASK',
+                'ADD_CUSTOM_TASK',
+                'SAVE_JOURNAL',
+                'PURCHASE_REWARD',
+                'BOSS_ATTACK',
+                'CLAIM_PASS_REWARD',
+                'QUIZ_OFFLINE_ATTEMPT',
+                'GACHA_OFFLINE_SPIN',
+                'OPEN_MYSTERY_BOX_OFFLINE',
+            ],
             required: true,
         },
         responseSnapshot: {

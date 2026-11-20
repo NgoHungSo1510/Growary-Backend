@@ -5,6 +5,14 @@ export interface UserSettings {
     timezone: string;
 }
 
+export interface LevelConfigDTO {
+    level: number;
+    xpRequired: number;
+    title?: string;
+    coinReward?: number;
+    gachaTickets?: number;
+}
+
 export interface PendingPenalty {
     questId?: string;
     questTitle?: string;
