@@ -366,3 +366,43 @@ export const checkAndActivateBosses = async (): Promise<void> => {
     await checkWeeklyRotation();
 };
 
+/**
+ * Gán, đổi hoặc gỡ danh sách nhân vật vào/ra khỏi bộ sưu tập
+ * @param bossIds - Mảng ID nhân vật cần cập nhật
+ * @param collectionId - ID bộ sưu tập đích (hoặc null/chuỗi rỗng để gỡ)
+ * @returns Số lượng nhân vật đã cập nhật và collectionId mới
+ */
+export async function assignBossesToCollection(
+    bossIds: string[],
+    collectionId?: string | null
+): Promise<{ updatedCount: number; collectionId: string | null }> {
+    const validBossIds = Array.isArray(bossIds)
+        ? bossIds.map((id) => String(id).trim()).filter((id) => id.length > 0)
+        : [];
+    if (validBossIds.length === 0) {
+        throw new Error('Danh sách nhân vật không được để trống');
+    }
+
+    const normalizedColId =
+        collectionId && String(collectionId).trim() !== ''
+            ? String(collectionId).trim()
+            : null;
+
+    if (normalizedColId !== null) {
+        const targetCollection = await BossCollection.findById(normalizedColId);
+        if (!targetCollection) {
+            throw new Error('Bộ sưu tập đích không tồn tại');
+        }
+    }
+
+    const res = await BossEvent.updateMany(
+        { _id: { $in: validBossIds } },
+        { $set: { collectionId: normalizedColId } }
+    );
+
+    return {
+        updatedCount: res.modifiedCount ?? validBossIds.length,
+        collectionId: normalizedColId,
+    };
+}
+

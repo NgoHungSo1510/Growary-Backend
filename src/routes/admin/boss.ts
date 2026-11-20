@@ -40,6 +40,7 @@ router.post('/boss', async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const payload = {
             ...req.body,
+            collectionId: req.body.collectionId ? req.body.collectionId : null,
             isLimited: false,
             miniGameType: 'random',
         };
@@ -55,6 +56,7 @@ router.put('/boss/:id', async (req: AuthRequest, res: Response): Promise<void> =
     try {
         const payload = {
             ...req.body,
+            collectionId: req.body.collectionId ? req.body.collectionId : null,
             isLimited: false,
             miniGameType: 'random',
         };
@@ -178,11 +180,47 @@ router.get('/boss-collections', async (_req: AuthRequest, res: Response): Promis
 
 router.post('/boss-collections', async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { title, description, month, year, iconEmoji, completionStory, bonusTickets } = req.body;
-        const collection = await BossCollection.create({ title, description, month, year, iconEmoji, completionStory, bonusTickets });
+        const {
+            title,
+            description,
+            month = new Date().getMonth() + 1,
+            year = new Date().getFullYear(),
+            iconEmoji,
+            themeColor,
+            completionStory,
+            bonusTickets,
+            isActive = true,
+        } = req.body;
+        const collection = await BossCollection.create({
+            title,
+            description,
+            month,
+            year,
+            iconEmoji,
+            themeColor,
+            completionStory,
+            bonusTickets,
+            isActive,
+        });
         res.json({ collection });
     } catch (error) {
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+router.patch('/boss-collections/assign-characters', async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const { bossIds, collectionId } = req.body;
+        if (!Array.isArray(bossIds) || bossIds.length === 0) {
+            res.status(400).json({ error: 'Danh sách nhân vật (bossIds) không được để trống' });
+            return;
+        }
+        const { assignBossesToCollection } = await import('../../services/bossService');
+        const result = await assignBossesToCollection(bossIds, collectionId ?? null);
+        res.json({ success: true, ...result });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Không thể cập nhật bộ sưu tập cho nhân vật';
+        res.status(400).json({ error: message });
     }
 });
 

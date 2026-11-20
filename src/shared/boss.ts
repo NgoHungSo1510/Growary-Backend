@@ -103,3 +103,22 @@ export interface BossAttackResultDTO {
     isOfflineQueued?: boolean;
 }
 
+export interface BossCollectionDTO {
+    _id: string;
+    title: string;
+    description: string;
+    month: number;
+    year: number;
+    iconEmoji: string;
+    themeColor?: string;
+    completionStory: string;
+    bonusTickets: number;
+    isActive: boolean;
+    bossCount?: number;
+}
+
+export interface BossCollectionAssignPayload {
+    bossIds: string[];
+    collectionId: string | null;
+}
+
