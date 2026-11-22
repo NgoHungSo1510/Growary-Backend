@@ -223,8 +223,6 @@ export const spinGacha = async (
                 title?: string;
             };
             const code = `GACHA-${uuidv4().substring(0, 8).toUpperCase()}`;
-            const expiresAt = new Date();
-            expiresAt.setDate(expiresAt.getDate() + 30);
             const voucher = new Voucher({
                 code,
                 reward: reward._id,
@@ -232,7 +230,6 @@ export const spinGacha = async (
                 status: 'active',
                 pointCostSnapshot: 0,
                 rewardTitleSnapshot: reward.title || selectedItem.name,
-                expiresAt,
             });
             await voucher.save();
             grantedItemDetails = reward;

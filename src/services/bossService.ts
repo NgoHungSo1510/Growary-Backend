@@ -3,7 +3,7 @@ import { BossCollection, UserBossCollection } from '../models';
 import { processLevelUp } from './levelService';
 import * as seasonPassHooks from './seasonPassHooks';
 import { v4 as uuidv4 } from 'uuid';
-import { VOUCHER_EXPIRY_DAYS, getStartOfDay } from '../constants';
+import { getStartOfDay } from '../constants';
 import { PlayableMiniGameKey, MiniGameCatalogItem } from '../shared/boss';
 
 export const DEFAULT_MINIGAME_CATALOG: MiniGameCatalogItem[] = [
@@ -127,8 +127,6 @@ export const distributeBossRewards = async (bossId: string) => {
 
             // Distribute item rewards (tất cả user có đóng góp đều nhận)
             if (boss.rewardItems && boss.rewardItems.length > 0) {
-                const expiresAt = new Date();
-                expiresAt.setDate(expiresAt.getDate() + VOUCHER_EXPIRY_DAYS);
                 for (const rw of boss.rewardItems as any) {
                     await Voucher.create({
                         user: user._id,
@@ -136,7 +134,6 @@ export const distributeBossRewards = async (bossId: string) => {
                         code: `BOSS-${uuidv4().slice(0, 8).toUpperCase()}`,
                         pointCostSnapshot: 0,
                         rewardTitleSnapshot: rw.title,
-                        expiresAt,
                     });
                     if (rw.stock !== undefined) {
                         rw.stock -= 1;

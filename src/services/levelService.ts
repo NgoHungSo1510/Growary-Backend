@@ -1,6 +1,5 @@
 import { Level, Voucher } from '../models';
 import { ILevel } from '../models/Level';
-import { VOUCHER_EXPIRY_DAYS } from '../constants';
 import { v4 as uuidv4 } from 'uuid';
 import { GrantedRewards } from '../types';
 
@@ -38,9 +37,6 @@ export const processLevelUp = async (user: any, addedXp: number): Promise<Grante
                 }
 
                 if (newLvlConfig.rewardItems && newLvlConfig.rewardItems.length > 0) {
-                    const expiresAt = new Date();
-                    expiresAt.setDate(expiresAt.getDate() + VOUCHER_EXPIRY_DAYS);
-
                     for (const rw of newLvlConfig.rewardItems as any) {
                         await Voucher.create({
                             user: user._id,
@@ -48,7 +44,6 @@ export const processLevelUp = async (user: any, addedXp: number): Promise<Grante
                             code: `LVL-${uuidv4().slice(0, 8).toUpperCase()}`,
                             pointCostSnapshot: 0,
                             rewardTitleSnapshot: rw.title,
-                            expiresAt,
                         });
 
                         if (rw.stock !== undefined) {

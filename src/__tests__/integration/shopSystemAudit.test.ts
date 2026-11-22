@@ -325,27 +325,27 @@ describe('V2.6.1 Full Shop, Event, Voucher & Warehouse System Audit (Test Accoun
         expect(unreadFinal.body.vouchers).toHaveLength(0);
     });
 
-    it('AUDIT-06: Expired vouchers are rejected by both User use and Admin confirm', async () => {
-        const expiredVoucher = await Voucher.create({
+    it('AUDIT-06: Vouchers never expire — legacy past-expiresAt/expired vouchers remain usable and confirmable', async () => {
+        const legacyVoucher = await Voucher.create({
             user: buyerAccount._id,
-            code: 'VCH-EXPIRED1',
-            pointCostSnapshot: 1000,
-            rewardTitleSnapshot: 'Voucher Hết Hạn',
-            status: 'active',
+            code: 'VCH-LEGACY1',
+            pointCostSnapshot: 5000,
+            rewardTitleSnapshot: 'Voucher Cũ Không Hết Hạn',
+            status: 'expired',
             expiresAt: new Date(Date.now() - 60_000),
         });
 
         const userUseRes = await request(app)
-            .patch(`/api/rewards/vouchers/${expiredVoucher.code}/use`)
+            .patch(`/api/rewards/vouchers/${legacyVoucher.code}/use`)
             .set('Authorization', `Bearer ${buyerToken}`);
-        expect(userUseRes.status).toBe(400);
-        expect(userUseRes.body.error).toBe('Voucher has expired');
+        expect(userUseRes.status).toBe(200);
+        expect(userUseRes.body.voucher.status).toBe('pending_use');
 
         const adminConfirmRes = await request(app)
-            .patch(`/api/rewards/vouchers/${expiredVoucher.code}/confirm`)
+            .patch(`/api/rewards/vouchers/${legacyVoucher.code}/confirm`)
             .set('Authorization', `Bearer ${adminToken}`);
-        expect(adminConfirmRes.status).toBe(400);
-        expect(adminConfirmRes.body.error).toBe('Voucher has expired');
+        expect(adminConfirmRes.status).toBe(200);
+        expect(adminConfirmRes.body.voucher.status).toBe('used');
     });
 
     it('AUDIT-07: Product Fragment Mapping (SpecialItemConfig) creates Reward Voucher upon fragment exchange', async () => {

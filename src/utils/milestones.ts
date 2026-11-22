@@ -35,9 +35,6 @@ export async function checkAndGrantMilestones(userId: string | mongoose.Types.Ob
 
             // Grant product tickets (vouchers)
             if (m.rewardItems && m.rewardItems.length > 0) {
-                const expiresAt = new Date();
-                expiresAt.setDate(expiresAt.getDate() + 30); // 30 days expiry
-
                 for (const rw of m.rewardItems as any) {
                     await Voucher.create({
                         user: user._id,
@@ -45,7 +42,6 @@ export async function checkAndGrantMilestones(userId: string | mongoose.Types.Ob
                         code: `GIFT-${uuidv4().slice(0, 8).toUpperCase()}`,
                         pointCostSnapshot: 0, // Gifted, costs 0
                         rewardTitleSnapshot: rw.title,
-                        expiresAt,
                     });
 
                     if (rw.stock !== undefined) {

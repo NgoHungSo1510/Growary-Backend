@@ -9,7 +9,7 @@ export const updateAutoApproveConfigSchema = z.object({
     enabled: z.boolean().optional(),
     thresholdHours: z.number().min(1).max(72).optional(),
     maxTasksPerUserPerDay: z.number().min(1).max(20).optional(),
-    voucherMaxPoints: z.number().min(0).max(50000).optional(),
+    voucherMaxPoints: z.number().min(0).max(10000000).optional(),
 });
 
 export const reviewAutoApprovedItemSchema = z.object({

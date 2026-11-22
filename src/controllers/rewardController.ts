@@ -202,15 +202,10 @@ export const useVoucher = async (req: AuthRequest, res: Response): Promise<void>
     try {
         const voucher = await Voucher.findOne({ code: req.params.code, user: req.userId });
         if (!voucher) { res.status(404).json({ error: 'Voucher not found' }); return; }
-        if (voucher.status === 'expired' || (voucher.expiresAt && new Date(voucher.expiresAt) < new Date())) {
-            if (voucher.status !== 'expired') {
-                voucher.status = 'expired';
-                await voucher.save();
-            }
-            res.status(400).json({ error: 'Voucher has expired' });
+        if (!['active', 'expired'].includes(voucher.status)) {
+            res.status(400).json({ error: 'Voucher is not active' });
             return;
         }
-        if (voucher.status !== 'active') { res.status(400).json({ error: 'Voucher is not active' }); return; }
 
         const now = new Date();
         voucher.status = 'pending_use';
@@ -249,15 +244,7 @@ export const confirmVoucher = async (req: AuthRequest, res: Response): Promise<v
     try {
         const voucher = await Voucher.findOne({ code: req.params.code });
         if (!voucher) { res.status(404).json({ error: 'Voucher not found or already used' }); return; }
-        if (voucher.status === 'expired' || (voucher.expiresAt && new Date(voucher.expiresAt) < new Date())) {
-            if (voucher.status !== 'expired') {
-                voucher.status = 'expired';
-                await voucher.save();
-            }
-            res.status(400).json({ error: 'Voucher has expired' });
-            return;
-        }
-        if (!['active', 'pending_use'].includes(voucher.status)) {
+        if (!['active', 'pending_use', 'expired'].includes(voucher.status)) {
             res.status(404).json({ error: 'Voucher not found or already used' });
             return;
         }

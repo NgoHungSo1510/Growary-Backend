@@ -222,9 +222,6 @@ export const purchaseRewardItem = async (
     // Check VIP rank up
     const { rankUpReward, newVipTier } = await checkAndApplyVipRankUp(user);
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
-
     const flashSaleSaving = Math.max(0, reward.pointCost - effectiveBasePrice);
     const couponProductSaving = Math.min(effectiveBasePrice, appliedProductDiscount);
     const totalDiscountAmount = flashSaleSaving + couponProductSaving;
@@ -238,7 +235,6 @@ export const purchaseRewardItem = async (
         rewardTitleSnapshot: reward.title,
         discountAmount: totalDiscountAmount,
         hasFreeShip,
-        expiresAt
     });
 
     return {

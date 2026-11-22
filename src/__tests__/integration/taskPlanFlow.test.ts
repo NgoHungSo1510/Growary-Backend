@@ -103,21 +103,15 @@ describe('Integration Flow: Task & Plan Lifecycle Flow', () => {
             expect(res.body.error).toBe('Validation failed');
         });
 
-        it('should successfully add custom task to plan', async () => {
+        it('should successfully add custom task to plan and preserve scheduledTime and durationMinutes', async () => {
+            const addedTasks: any[] = [];
             const mockPlan = {
                 _id: 'plan123',
-                tasks: [] as any[],
+                tasks: addedTasks,
                 save: jest.fn().mockResolvedValue(true),
             };
             (DailyPlan.findById as jest.Mock).mockResolvedValue(mockPlan);
             (DailyPlan.findOne as jest.Mock).mockResolvedValue(mockPlan);
-
-            // In planController.addTask it uses DailyPlan.findOne({ _id: planId, user: req.userId })
-            (DailyPlan.findOne as jest.Mock).mockResolvedValue({
-                ...mockPlan,
-                tasks: [],
-                save: jest.fn().mockResolvedValue(true),
-            });
 
             const res = await request(app)
                 .post('/api/plans/plan123/tasks')
@@ -126,10 +120,46 @@ describe('Integration Flow: Task & Plan Lifecycle Flow', () => {
                     customTitle: 'Read 20 pages of clean architecture',
                     category: 'study',
                     description: 'Chapter 4',
+                    scheduledTime: '09:30',
+                    durationMinutes: 45,
                 });
 
             expect(res.status).toBe(201);
             expect(res.body.plan).toBeDefined();
+            expect(addedTasks).toHaveLength(1);
+            expect(addedTasks[0].scheduledTime).toBe('09:30');
+            expect(addedTasks[0].durationMinutes).toBe(45);
+        });
+
+        it('should preserve scheduledTime and durationMinutes when adding template task to plan', async () => {
+            const addedTasks: any[] = [];
+            const mockPlan = {
+                _id: 'plan123',
+                tasks: addedTasks,
+                save: jest.fn().mockResolvedValue(true),
+            };
+            (DailyPlan.findOne as jest.Mock).mockResolvedValue(mockPlan);
+            (TaskTemplate.findById as jest.Mock).mockResolvedValue({
+                _id: 'tpl123',
+                title: 'Morning Workout',
+                pointsReward: 25,
+                coinReward: 10,
+                category: 'health',
+            });
+
+            const res = await request(app)
+                .post('/api/plans/plan123/tasks')
+                .set('Authorization', `Bearer ${validToken}`)
+                .send({
+                    templateId: 'tpl123',
+                    scheduledTime: '06:15',
+                    durationMinutes: 30,
+                });
+
+            expect(res.status).toBe(201);
+            expect(addedTasks).toHaveLength(1);
+            expect(addedTasks[0].scheduledTime).toBe('06:15');
+            expect(addedTasks[0].durationMinutes).toBe(30);
         });
     });
 

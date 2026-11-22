@@ -278,7 +278,7 @@ describe('V2.6.3 Account Notifications & 6-Hour Auto-Approval System', () => {
         expect(TaskTemplate.create).not.toHaveBeenCalled();
     });
 
-    it('enforces safety caps (maxTasksPerUserPerDay = 3 and voucherMaxPoints = 500)', async () => {
+    it('enforces safety caps (maxTasksPerUserPerDay = 3 and voucherMaxPoints = 100000)', async () => {
         const sevenHoursAgo = new Date(Date.now() - 7 * 60 * 60 * 1000);
         const now = new Date();
         // Simulate 3 tasks already auto-approved today for this user, plus 1 pending task
@@ -302,22 +302,41 @@ describe('V2.6.3 Account Notifications & 6-Hour Auto-Approval System', () => {
             },
         ]);
 
-        // Voucher with 1200 points (> 500 cap)
+        // Voucher with 12000 (< 100000 cap -> auto-approved) and 100000 (>= 100000 cap -> manual only)
         (Voucher.find as jest.Mock).mockResolvedValue([
+            {
+                _id: new mongoose.Types.ObjectId(),
+                code: 'VCH-UNDER-CAP',
+                user: { _id: userId, username: 'player_one', email: 'player@growary.vn' },
+                rewardTitleSnapshot: 'Trà Sữa 12k',
+                pointCostSnapshot: 12000,
+                status: 'pending_use',
+                pendingSince: sevenHoursAgo,
+            },
             {
                 _id: new mongoose.Types.ObjectId(),
                 code: 'VCH-EXPENSIVE',
                 user: { _id: userId, username: 'player_one', email: 'player@growary.vn' },
-                rewardTitleSnapshot: 'Tai Nghe Bluetooth',
-                pointCostSnapshot: 1200,
+                rewardTitleSnapshot: 'Tai Nghe Bluetooth 100k',
+                pointCostSnapshot: 100000,
                 status: 'pending_use',
                 pendingSince: sevenHoursAgo,
             },
         ]);
 
+        (Voucher.findOneAndUpdate as jest.Mock).mockResolvedValue({
+            _id: new mongoose.Types.ObjectId(),
+            code: 'VCH-UNDER-CAP',
+            user: userId,
+            rewardTitleSnapshot: 'Trà Sữa 12k',
+            pointCostSnapshot: 12000,
+            status: 'used',
+            autoApproved: true,
+        });
+
         const sweepRes = await approvalService.runAutoApprovalSweep(now);
         expect(sweepRes.autoApprovedTasks).toBe(0);
-        expect(sweepRes.autoApprovedVouchers).toBe(0);
+        expect(sweepRes.autoApprovedVouchers).toBe(1);
         expect(sweepRes.skippedBySafetyCap).toBe(2);
     });
 

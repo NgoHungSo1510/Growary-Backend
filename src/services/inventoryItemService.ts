@@ -219,8 +219,6 @@ export const exchangeItemFragment = async (
 
     if (mapping && mapping.reward && typeof mapping.reward === 'object' && '_id' in mapping.reward) {
         const mappedReward = mapping.reward as MappedRewardDoc;
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + 30);
 
         const voucher = await Voucher.create({
             user: userId,
@@ -229,7 +227,6 @@ export const exchangeItemFragment = async (
             pointCostSnapshot: 0,
             rewardTitleSnapshot: mappedReward.title || specialItemDoc.name,
             fragmentType: specialItemDoc.type,
-            expiresAt,
         });
 
         return {

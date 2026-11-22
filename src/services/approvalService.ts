@@ -13,7 +13,7 @@ export const DEFAULT_AUTO_APPROVE_CONFIG: AutoApproveConfig = {
     enabled: true,
     thresholdHours: 6,
     maxTasksPerUserPerDay: 3,
-    voucherMaxPoints: 500,
+    voucherMaxPoints: 100000,
 };
 
 let isSweepRunning = false;
@@ -320,7 +320,7 @@ export async function confirmVoucherUse(params: {
     const now = new Date();
     const filter = params.isAutoApproved
         ? { code: params.code, status: 'pending_use' }
-        : { code: params.code, status: { $in: ['active', 'pending_use'] } };
+        : { code: params.code, status: { $in: ['active', 'pending_use', 'expired'] } };
     const update: Record<string, unknown> = {
         status: 'used',
         usedAt: now,
@@ -437,7 +437,7 @@ export async function runAutoApprovalSweep(
             for (const v of pendingVouchers) {
                 const pendingTime = v.pendingSince ? new Date(v.pendingSince) : null;
                 if (!pendingTime || pendingTime > cutoff) continue;
-                if (v.pointCostSnapshot > config.voucherMaxPoints) {
+                if (v.pointCostSnapshot >= config.voucherMaxPoints) {
                     skippedBySafetyCap++;
                     continue;
                 }
